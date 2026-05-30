@@ -583,7 +583,7 @@ function mapExecutionMetadata(
   if (executionType === 'validation-only') return { mode: 'validation' };
   if (executionType === 'manual') return { mode: 'manual' };
   if (executionType === 'ai-assisted') return { mode: 'ai' };
-  if (executionType === 'scriptable') return { mode: 'scripted' };
+  if (executionType === 'scripted') return { mode: 'scripted' };
   return { mode: 'manual' };
 }
 
@@ -616,11 +616,22 @@ function resolveValidationCommands(scanReport: ScanReport): string[] {
 function resolveStepExecutionType(
   capabilities: readonly React19RiskRecommendation['executionCapability'][],
 ): React19PlanStepExecutionType {
-  if (capabilities.includes('manual')) return 'manual';
-  if (capabilities.includes('ai-assisted')) return 'ai-assisted';
-  if (capabilities.includes('codemod')) return 'codemod';
-  if (capabilities.includes('scriptable')) return 'scriptable';
+  if (capabilities.includes('manual')) return mapExecutionCapabilityToPlanExecutionType('manual');
+  if (capabilities.includes('ai-assisted')) {
+    return mapExecutionCapabilityToPlanExecutionType('ai-assisted');
+  }
+  if (capabilities.includes('codemod')) return mapExecutionCapabilityToPlanExecutionType('codemod');
+  if (capabilities.includes('scriptable')) {
+    return mapExecutionCapabilityToPlanExecutionType('scriptable');
+  }
   return 'validation-only';
+}
+
+function mapExecutionCapabilityToPlanExecutionType(
+  capability: React19RiskRecommendation['executionCapability'],
+): React19PlanStepExecutionType {
+  if (capability === 'scriptable') return 'scripted';
+  return capability;
 }
 
 function resolveDominantExecutionCapability(

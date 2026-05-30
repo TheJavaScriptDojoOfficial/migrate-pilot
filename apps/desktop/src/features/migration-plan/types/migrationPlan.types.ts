@@ -79,12 +79,7 @@ export interface MigrationPlanStepV2 {
   readonly rollbackStrategy: MigrationPlanStepV2RollbackStrategy;
 }
 
-export type React19PlanStepExecutionType =
-  | 'scriptable'
-  | 'codemod'
-  | 'ai-assisted'
-  | 'manual'
-  | 'validation-only';
+export type React19PlanStepExecutionType = MigrationPlanStepV2ExecutionType;
 
 export type MigrationStepExecutionMode =
   | 'scripted'
