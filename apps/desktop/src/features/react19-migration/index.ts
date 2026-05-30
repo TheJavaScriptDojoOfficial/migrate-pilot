@@ -31,3 +31,24 @@ export type {
   React19MigrationContextInput,
   React19MigrationContextResult,
 } from './services/react19MigrationContextService';
+
+/* React 19 compatibility report (R2 step 3) */
+export type {
+  React19CompatibilityCategory,
+  React19CompatibilityCategoryReport,
+  React19CompatibilityCategoryStatus,
+  React19CompatibilityIssue,
+  React19CompatibilityIssueCode,
+  React19CompatibilityReport,
+  React19CompatibilitySeverity,
+  React19CompatibilitySignals,
+  React19CompatibilitySummary,
+} from './types/react19Compatibility.types';
+export { REACT_19_COMPATIBILITY_CATEGORIES_ORDERED } from './types/react19Compatibility.types';
+export { computeReact19CompatibilityReport } from './services/react19CompatibilityScanner';
+export type {
+  React19CompatibilityPackageManager,
+  React19CompatibilityScanInput,
+  React19PackageManifest,
+  React19SourceSignals,
+} from './services/react19CompatibilityScanner';

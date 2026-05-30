@@ -26,7 +26,14 @@ import { buildRecommendations } from './scannerRecommendationService';
 import { buildRiskReport } from './scannerRiskService';
 
 import type { PackageManager } from '@features/project-selection';
-import { computeReact19MigrationContext } from '@features/react19-migration';
+import {
+  computeReact19CompatibilityReport,
+  computeReact19MigrationContext,
+} from '@features/react19-migration';
+import type {
+  React19PackageManifest,
+  React19SourceSignals,
+} from '@features/react19-migration';
 import type {
   DependencyReport,
   DeprecatedLifecycleUsage,
@@ -149,6 +156,26 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
       : {}),
   });
 
+  // R2 step 3 — generic React 19 compatibility scan. Deterministic,
+  // composes Step 2 support data with broader compatibility signals
+  // (deprecated APIs, lifecycle methods, build tooling, deprecated
+  // dependencies, Sass/SCSS, package manager, validation scripts, …).
+  const compatibilityReport = computeReact19CompatibilityReport({
+    ...(react19.status !== undefined ? { supportStatus: react19.status } : {}),
+    ...(parsedPackageJson.value !== undefined
+      ? { manifest: toCompatibilityManifest(parsedPackageJson.value) }
+      : {}),
+    ...(typeof raw.tsconfigText === 'string' && raw.tsconfigText.length > 0
+      ? { tsconfigText: raw.tsconfigText }
+      : {}),
+    hasTsconfig: raw.tsconfigPresent,
+    babelConfigFiles: raw.babelConfigFiles ?? [],
+    webpackConfigFiles: raw.webpackConfigFiles ?? [],
+    source: toCompatibilitySource(raw, sourceAnalysis),
+    packageManager: dependencies.packageManager,
+    lockFiles: dependencies.lockFiles,
+  });
+
   return {
     id: makeReportId(raw),
     projectPath: raw.path,
@@ -163,6 +190,7 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
       ? { react19MigrationContext: react19.context }
       : {}),
     react19SupportStatus: react19.status,
+    react19CompatibilityReport: compatibilityReport,
   };
 }
 
@@ -445,4 +473,68 @@ function makeReportId(raw: ProjectScanRaw): string {
   // need cryptographic uniqueness here; the report lives in-memory only.
   const slug = raw.path.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase();
   return `scan:${slug}:${Date.now()}`;
+}
+
+/* -------------------------------------------------------------------------- */
+/* React 19 compatibility wiring (R2 step 3)                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Convert the parsed package.json buckets the scanner already extracts
+ * into the {@link React19PackageManifest} shape the compatibility scanner
+ * consumes. Avoids duplicating manifest parsing in the React 19 feature.
+ */
+function toCompatibilityManifest(pkg: ParsedPackageJson): React19PackageManifest {
+  return {
+    dependencies: pkg.dependencies,
+    devDependencies: pkg.devDependencies,
+    peerDependencies: pkg.peerDependencies,
+    optionalDependencies: pkg.optionalDependencies,
+    scripts: pkg.scripts,
+  };
+}
+
+/**
+ * Adapt the deterministic Rust source-walk payload into the
+ * {@link React19SourceSignals} shape. Aggregates the per-method lifecycle
+ * counts/example files into compact totals + sample list (the React 19
+ * compatibility scanner only needs counts + a few sample paths).
+ */
+function toCompatibilitySource(
+  raw: ProjectScanRaw,
+  source: SourceAnalysisReport,
+): React19SourceSignals {
+  let lifecycleTotal = 0;
+  const lifecycleSamples: string[] = [];
+  for (const entry of source.deprecatedLifecycleIndicators) {
+    lifecycleTotal += entry.fileCount;
+    if (
+      entry.exampleFile !== undefined &&
+      lifecycleSamples.length < 5 &&
+      !lifecycleSamples.includes(entry.exampleFile)
+    ) {
+      lifecycleSamples.push(entry.exampleFile);
+    }
+  }
+
+  return {
+    classComponentIndicators: source.classComponentIndicators,
+    reactDomRenderUsages: source.reactDomRenderUsages,
+    reactDomHydrateUsages: raw.source.reactDomHydrateUsages ?? 0,
+    unmountComponentAtNodeUsages: raw.source.unmountComponentAtNodeUsages ?? 0,
+    unstableRenderSubtreeUsages: raw.source.unstableRenderSubtreeUsages ?? 0,
+    createFactoryUsages: raw.source.createFactoryUsages ?? 0,
+    findDomNodeUsages: raw.source.findDomNodeUsages ?? 0,
+    stringRefUsages: raw.source.stringRefUsages ?? 0,
+    legacyContextIndicators: source.legacyContextIndicators,
+    enzymeUsageIndicators: raw.source.enzymeUsageIndicators ?? 0,
+    deprecatedLifecycleSampleFiles: lifecycleSamples,
+    deprecatedLifecycleTotalCount: lifecycleTotal,
+    scssFileCount: raw.source.scssFiles ?? 0,
+    sassFileCount: raw.source.sassFiles ?? 0,
+    jsFileCount: source.jsFiles,
+    jsxFileCount: source.jsxFiles,
+    tsFileCount: source.tsFiles,
+    tsxFileCount: source.tsxFiles,
+  };
 }

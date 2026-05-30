@@ -13,6 +13,7 @@
 
 import type { PackageManager } from '@features/project-selection';
 import type {
+  React19CompatibilityReport,
   React19MigrationContext,
   React19SupportStatus,
 } from '@features/react19-migration';
@@ -240,6 +241,18 @@ export interface ScanReport {
    * marked optional so older serialised reports still satisfy the type.
    */
   readonly react19SupportStatus?: React19SupportStatus;
+  /**
+   * React 19 compatibility report (R2 step 3). Generic, deterministic
+   * compatibility scan covering React/React-DOM versions, build tooling,
+   * deprecated React APIs, lifecycle methods, component patterns,
+   * routing, testing, deprecated dependencies, peer-risk signals,
+   * Sass/SCSS, package manager health, and validation script
+   * availability.
+   *
+   * Optional so older serialised reports remain type-compatible. The
+   * current scanner always populates it.
+   */
+  readonly react19CompatibilityReport?: React19CompatibilityReport;
 }
 
 /* -------------------------------------------------------------------------- */

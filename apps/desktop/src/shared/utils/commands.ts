@@ -58,6 +58,24 @@ export interface ProjectScanRaw {
     readonly bun: boolean;
   };
   readonly tsconfigPresent: boolean;
+  /**
+   * Raw `tsconfig.json` text, when present and within the read cap.
+   * `null` when missing or oversized — used by the React 19 compatibility
+   * scanner to inspect `compilerOptions.jsx`.
+   */
+  readonly tsconfigText?: string | null;
+  /**
+   * Whether any Babel root config file exists. Always populated by the
+   * current scanner; marked optional to keep older serialised payloads
+   * type-compatible.
+   */
+  readonly babelConfigPresent?: boolean;
+  /** Names of the Babel config files actually found at the project root. */
+  readonly babelConfigFiles?: readonly string[];
+  /** Whether any `webpack.config.{js,cjs,ts}` exists at the project root. */
+  readonly webpackConfigPresent?: boolean;
+  /** Names of the webpack config files actually found. */
+  readonly webpackConfigFiles?: readonly string[];
   readonly isGitRepository: boolean;
   readonly currentBranch: string | null;
   /** `null` when git cleanliness could not be determined safely. */
@@ -74,12 +92,30 @@ export interface ProjectScanSourceRaw {
   readonly tsFiles: number;
   readonly tsxFiles: number;
   readonly styleFiles: number;
+  /** Subset of `styleFiles`: number of `.scss` files. */
+  readonly scssFiles?: number;
+  /** Subset of `styleFiles`: number of `.sass` files. */
+  readonly sassFiles?: number;
   readonly jsonFiles: number;
   readonly classComponentIndicators: number;
   readonly deprecatedLifecycleIndicators: readonly ProjectScanLifecycleRaw[];
   readonly reactDomRenderUsages: number;
+  /** Files calling `ReactDOM.hydrate(`. */
+  readonly reactDomHydrateUsages?: number;
+  /** Files calling `unmountComponentAtNode(`. */
+  readonly unmountComponentAtNodeUsages?: number;
+  /** Files referencing `unstable_renderSubtreeIntoContainer`. */
+  readonly unstableRenderSubtreeUsages?: number;
+  /** Files calling `React.createFactory(`. */
+  readonly createFactoryUsages?: number;
+  /** Files referencing any form of `findDOMNode`. */
+  readonly findDomNodeUsages?: number;
+  /** Files containing string-ref syntax (`ref="something"`). */
+  readonly stringRefUsages?: number;
   readonly legacyContextIndicators: number;
   readonly routerUsageIndicators: number;
+  /** Files importing from `enzyme`. */
+  readonly enzymeUsageIndicators?: number;
   readonly scannedDirectories: readonly string[];
   readonly skippedDirectories: readonly string[];
 }

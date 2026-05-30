@@ -11,6 +11,7 @@ import { ROUTES } from '@shared/constants/routes';
 
 import {
   ScanDependencyCard,
+  ScanReact19CompatibilityCard,
   ScanReact19ContextCard,
   ScanRecommendations,
   ScanRiskCard,
@@ -95,6 +96,11 @@ export function ScanReportScreen(): JSX.Element {
                   ? { status: report.react19SupportStatus }
                   : {})}
               />
+              {report.react19CompatibilityReport !== undefined ? (
+                <ScanReact19CompatibilityCard
+                  report={report.react19CompatibilityReport}
+                />
+              ) : null}
               <ScanRiskCard risks={report.risks} />
               <ScanDependencyCard
                 dependencies={report.dependencies}

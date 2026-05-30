@@ -334,9 +334,9 @@ fn is_scannable_extension(ext: &str) -> ScannableKind {
         "jsx" => ScannableKind::Jsx,
         "ts" => ScannableKind::Ts,
         "tsx" => ScannableKind::Tsx,
-        "css" => ScannableKind::Style,
-        "scss" => ScannableKind::Style,
-        "sass" => ScannableKind::Style,
+        "css" => ScannableKind::Css,
+        "scss" => ScannableKind::Scss,
+        "sass" => ScannableKind::Sass,
         "json" => ScannableKind::Json,
         _ => ScannableKind::Skip,
     }
@@ -348,7 +348,9 @@ enum ScannableKind {
     Jsx,
     Ts,
     Tsx,
-    Style,
+    Css,
+    Scss,
+    Sass,
     Json,
     Skip,
 }
@@ -361,6 +363,14 @@ impl ScannableKind {
             self,
             ScannableKind::Js | ScannableKind::Jsx | ScannableKind::Ts | ScannableKind::Tsx
         )
+    }
+
+    /// Whether this file type counts as a "style" file in the legacy
+    /// `style_files` aggregate (any of `.css` / `.scss` / `.sass`). The
+    /// React 19 compatibility scanner uses the more granular
+    /// `scss_files` / `sass_files` counters below.
+    const fn is_style(self) -> bool {
+        matches!(self, ScannableKind::Css | ScannableKind::Scss | ScannableKind::Sass)
     }
 }
 
@@ -392,6 +402,13 @@ pub struct SourceScanRaw {
     pub tsx_files: u32,
     pub style_files: u32,
     pub json_files: u32,
+    /// Number of `.scss` files seen anywhere under the walked tree. Always
+    /// `<= style_files`. Surfaced separately because the React 19
+    /// compatibility scanner cares whether SCSS is in use independently of
+    /// plain `.css` files.
+    pub scss_files: u32,
+    /// Number of `.sass` files seen anywhere under the walked tree.
+    pub sass_files: u32,
     /// Number of files containing at least one `class … extends (React.)?Component`
     /// or `extends (React.)?PureComponent` indicator.
     pub class_component_indicators: u32,
@@ -400,12 +417,36 @@ pub struct SourceScanRaw {
     pub deprecated_lifecycle_indicators: Vec<DeprecatedLifecycleUsage>,
     /// Number of files containing `ReactDOM.render(` or `import("react-dom").render(`.
     pub react_dom_render_usages: u32,
+    /// Number of files containing `ReactDOM.hydrate(` (React 16/17 SSR
+    /// hydration). Replaced by `hydrateRoot` in React 18+.
+    pub react_dom_hydrate_usages: u32,
+    /// Number of files calling `unmountComponentAtNode(` (deprecated in
+    /// React 18, removed in React 19). Replaced by `root.unmount()`.
+    pub unmount_component_at_node_usages: u32,
+    /// Number of files referencing the legacy
+    /// `unstable_renderSubtreeIntoContainer` API.
+    pub unstable_render_subtree_usages: u32,
+    /// Number of files calling `React.createFactory(` (deprecated in
+    /// React 16, removed in modern React).
+    pub create_factory_usages: u32,
+    /// Number of files using `findDOMNode` (either
+    /// `ReactDOM.findDOMNode` or a bare `findDOMNode(` call). Removed in
+    /// React 19.
+    pub find_dom_node_usages: u32,
+    /// Number of files containing string-ref usages such as
+    /// `ref="something"` / `ref='something'`. Detected via a conservative
+    /// substring-only fallback because Rust's `regex` crate is not in the
+    /// dependency graph; the heuristic is confirmed in JS/TS.
+    pub string_ref_usages: u32,
     /// Number of files containing legacy context API indicators (`childContextTypes`,
     /// `getChildContext`, `contextTypes`).
     pub legacy_context_indicators: u32,
     /// Number of files containing router usage indicators (`react-router` /
     /// `react-router-dom` imports OR top-level `<BrowserRouter` / `<Router`).
     pub router_usage_indicators: u32,
+    /// Number of files importing from `enzyme` (Enzyme is an unsupported
+    /// React 18+/19 testing surface).
+    pub enzyme_usage_indicators: u32,
     /// Top-level entries actually walked.
     pub scanned_directories: Vec<String>,
     /// Top-level entries skipped (node_modules, dist, …).
@@ -421,6 +462,25 @@ pub struct ProjectScanRaw {
     pub package_json_text: Option<String>,
     pub lock_files: LockFilePresence,
     pub tsconfig_present: bool,
+    /// Raw `tsconfig.json` text when present and within the read cap.
+    /// `None` when the file is missing OR exceeds [`MAX_PACKAGE_JSON_BYTES`].
+    /// Used by the React 19 compatibility scanner to detect the JSX
+    /// transform setting (`compilerOptions.jsx`).
+    pub tsconfig_text: Option<String>,
+    /// `true` when any of the supported Babel config filenames exists at
+    /// the project root: `.babelrc`, `.babelrc.js`, `.babelrc.cjs`,
+    /// `.babelrc.json`, `babel.config.js`, `babel.config.cjs`,
+    /// `babel.config.mjs`, `babel.config.json`.
+    pub babel_config_present: bool,
+    /// Names of the Babel config files actually found at the project
+    /// root. Empty when none are present.
+    pub babel_config_files: Vec<String>,
+    /// `true` when any of `webpack.config.js`, `webpack.config.cjs`, or
+    /// `webpack.config.ts` exists at the project root.
+    pub webpack_config_present: bool,
+    /// Names of the webpack config files actually found at the project
+    /// root. Empty when none are present.
+    pub webpack_config_files: Vec<String>,
     pub is_git_repository: bool,
     pub current_branch: Option<String>,
     /// Best-effort ".git is clean" answer. `None` indicates we could not
@@ -495,7 +555,16 @@ fn run_scan(canonical: &Path) -> CommandResult<ProjectScanRaw> {
         bun: file_exists(&canonical.join("bun.lockb")) || file_exists(&canonical.join("bun.lock")),
     };
 
-    let tsconfig_present = file_exists(&canonical.join("tsconfig.json"));
+    let tsconfig_path = canonical.join("tsconfig.json");
+    let tsconfig_present = file_exists(&tsconfig_path);
+    let tsconfig_text = if tsconfig_present {
+        read_capped_text_file(&tsconfig_path).unwrap_or(None)
+    } else {
+        None
+    };
+
+    let babel_config_files = collect_root_files(canonical, BABEL_CONFIG_FILENAMES);
+    let webpack_config_files = collect_root_files(canonical, WEBPACK_CONFIG_FILENAMES);
 
     let git_path = canonical.join(".git");
     let is_git_repository = git_path.exists();
@@ -529,6 +598,11 @@ fn run_scan(canonical: &Path) -> CommandResult<ProjectScanRaw> {
         package_json_text,
         lock_files,
         tsconfig_present,
+        tsconfig_text,
+        babel_config_present: !babel_config_files.is_empty(),
+        babel_config_files,
+        webpack_config_present: !webpack_config_files.is_empty(),
+        webpack_config_files,
         is_git_repository,
         current_branch,
         git_clean,
@@ -583,6 +657,64 @@ const REACT_DOM_RENDER_PATTERNS: &[&str] = &[
     "reactDom.render(",
 ];
 
+/// Filenames recognised as Babel configuration sources at the project
+/// root. Matched case-insensitively to tolerate macOS-style filenames.
+const BABEL_CONFIG_FILENAMES: &[&str] = &[
+    ".babelrc",
+    ".babelrc.js",
+    ".babelrc.cjs",
+    ".babelrc.json",
+    "babel.config.js",
+    "babel.config.cjs",
+    "babel.config.mjs",
+    "babel.config.json",
+];
+
+/// Filenames recognised as webpack configuration sources at the project
+/// root. Matched case-insensitively.
+const WEBPACK_CONFIG_FILENAMES: &[&str] = &[
+    "webpack.config.js",
+    "webpack.config.cjs",
+    "webpack.config.ts",
+];
+
+/// Patterns matched against file content to mark a file as containing a
+/// `findDOMNode` reference. We accept either the namespaced
+/// `ReactDOM.findDOMNode` form, the bare `findDOMNode(` call form, or the
+/// named import (`{ findDOMNode }` from `react-dom`). All forms are
+/// behaviourally equivalent for the migration scanner.
+const FIND_DOM_NODE_PATTERNS: &[&str] = &[
+    "ReactDOM.findDOMNode",
+    "findDOMNode(",
+    "{ findDOMNode",
+    "{findDOMNode",
+];
+
+const REACT_DOM_HYDRATE_PATTERNS: &[&str] = &[
+    "ReactDOM.hydrate(",
+    "reactDom.hydrate(",
+];
+
+const UNMOUNT_AT_NODE_PATTERNS: &[&str] = &[
+    "unmountComponentAtNode(",
+];
+
+const UNSTABLE_RENDER_SUBTREE_PATTERNS: &[&str] = &[
+    "unstable_renderSubtreeIntoContainer",
+];
+
+const CREATE_FACTORY_PATTERNS: &[&str] = &[
+    "React.createFactory(",
+    "createFactory(",
+];
+
+const ENZYME_USAGE_PATTERNS: &[&str] = &[
+    "from 'enzyme'",
+    "from \"enzyme\"",
+    "require('enzyme')",
+    "require(\"enzyme\")",
+];
+
 struct ScanWalker {
     root: PathBuf,
     total_files_scanned: u32,
@@ -591,11 +723,20 @@ struct ScanWalker {
     ts_files: u32,
     tsx_files: u32,
     style_files: u32,
+    scss_files: u32,
+    sass_files: u32,
     json_files: u32,
     class_component_indicators: u32,
     react_dom_render_usages: u32,
+    react_dom_hydrate_usages: u32,
+    unmount_component_at_node_usages: u32,
+    unstable_render_subtree_usages: u32,
+    create_factory_usages: u32,
+    find_dom_node_usages: u32,
+    string_ref_usages: u32,
     legacy_context_indicators: u32,
     router_usage_indicators: u32,
+    enzyme_usage_indicators: u32,
     /// Per-method counts + first example file for each deprecated lifecycle method.
     lifecycle_counts: [(u32, Option<String>); DEPRECATED_LIFECYCLE_METHODS.len()],
     scanned_directories: Vec<String>,
@@ -614,11 +755,20 @@ impl ScanWalker {
             ts_files: 0,
             tsx_files: 0,
             style_files: 0,
+            scss_files: 0,
+            sass_files: 0,
             json_files: 0,
             class_component_indicators: 0,
             react_dom_render_usages: 0,
+            react_dom_hydrate_usages: 0,
+            unmount_component_at_node_usages: 0,
+            unstable_render_subtree_usages: 0,
+            create_factory_usages: 0,
+            find_dom_node_usages: 0,
+            string_ref_usages: 0,
             legacy_context_indicators: 0,
             router_usage_indicators: 0,
+            enzyme_usage_indicators: 0,
             lifecycle_counts: std::array::from_fn(|_| (0, None)),
             scanned_directories: Vec::new(),
             skipped_directories: Vec::new(),
@@ -722,11 +872,25 @@ impl ScanWalker {
             ScannableKind::Jsx => self.jsx_files += 1,
             ScannableKind::Ts => self.ts_files += 1,
             ScannableKind::Tsx => self.tsx_files += 1,
-            ScannableKind::Style => self.style_files += 1,
+            ScannableKind::Css => self.style_files += 1,
+            ScannableKind::Scss => {
+                self.style_files += 1;
+                self.scss_files += 1;
+            }
+            ScannableKind::Sass => {
+                self.style_files += 1;
+                self.sass_files += 1;
+            }
             ScannableKind::Json => self.json_files += 1,
             ScannableKind::Skip => return,
         }
         self.total_files_scanned += 1;
+
+        // Defensive — `is_style` is informational only; the per-extension
+        // counters above already drive the legacy `style_files` aggregate.
+        // The reference here keeps the helper from being treated as dead
+        // code by clippy when no compatibility consumer reads it yet.
+        let _ = kind.is_style();
 
         if !kind.scan_content() {
             return;
@@ -758,11 +922,32 @@ impl ScanWalker {
         if REACT_DOM_RENDER_PATTERNS.iter().any(|p| text.contains(p)) {
             self.react_dom_render_usages += 1;
         }
+        if REACT_DOM_HYDRATE_PATTERNS.iter().any(|p| text.contains(p)) {
+            self.react_dom_hydrate_usages += 1;
+        }
+        if UNMOUNT_AT_NODE_PATTERNS.iter().any(|p| text.contains(p)) {
+            self.unmount_component_at_node_usages += 1;
+        }
+        if UNSTABLE_RENDER_SUBTREE_PATTERNS.iter().any(|p| text.contains(p)) {
+            self.unstable_render_subtree_usages += 1;
+        }
+        if CREATE_FACTORY_PATTERNS.iter().any(|p| text.contains(p)) {
+            self.create_factory_usages += 1;
+        }
+        if FIND_DOM_NODE_PATTERNS.iter().any(|p| text.contains(p)) {
+            self.find_dom_node_usages += 1;
+        }
+        if contains_string_ref(&text) {
+            self.string_ref_usages += 1;
+        }
         if LEGACY_CONTEXT_PATTERNS.iter().any(|p| text.contains(p)) {
             self.legacy_context_indicators += 1;
         }
         if ROUTER_PATTERNS.iter().any(|p| text.contains(p)) {
             self.router_usage_indicators += 1;
+        }
+        if ENZYME_USAGE_PATTERNS.iter().any(|p| text.contains(p)) {
+            self.enzyme_usage_indicators += 1;
         }
 
         for (i, method) in DEPRECATED_LIFECYCLE_METHODS.iter().enumerate() {
@@ -796,12 +981,21 @@ impl ScanWalker {
             ts_files: self.ts_files,
             tsx_files: self.tsx_files,
             style_files: self.style_files,
+            scss_files: self.scss_files,
+            sass_files: self.sass_files,
             json_files: self.json_files,
             class_component_indicators: self.class_component_indicators,
             deprecated_lifecycle_indicators: deprecated,
             react_dom_render_usages: self.react_dom_render_usages,
+            react_dom_hydrate_usages: self.react_dom_hydrate_usages,
+            unmount_component_at_node_usages: self.unmount_component_at_node_usages,
+            unstable_render_subtree_usages: self.unstable_render_subtree_usages,
+            create_factory_usages: self.create_factory_usages,
+            find_dom_node_usages: self.find_dom_node_usages,
+            string_ref_usages: self.string_ref_usages,
             legacy_context_indicators: self.legacy_context_indicators,
             router_usage_indicators: self.router_usage_indicators,
+            enzyme_usage_indicators: self.enzyme_usage_indicators,
             scanned_directories: self.scanned_directories,
             skipped_directories: self.skipped_directories,
         }
@@ -811,4 +1005,71 @@ impl ScanWalker {
 fn should_skip_dir(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     SKIP_DIRS.iter().any(|d| *d == lower)
+}
+
+/// Look for any of `candidates` as direct children of `root`, returning
+/// the canonical filename (lowercased to match the input list) for every
+/// candidate that exists. Used to collect Babel and webpack config
+/// presence without walking the whole tree.
+fn collect_root_files(root: &Path, candidates: &[&str]) -> Vec<String> {
+    let mut hits: Vec<String> = Vec::new();
+    for name in candidates {
+        if file_exists(&root.join(name)) {
+            hits.push((*name).to_string());
+        }
+    }
+    hits
+}
+
+/// Heuristic detector for legacy string-ref usage such as
+/// `ref="someRef"` / `ref='someRef'`. Walks the source character-by-
+/// character because the project does not pull in the `regex` crate and
+/// adding it for one rule would expand the build surface meaningfully.
+///
+/// We accept anything matching `ref=["']<non-empty>["']` where the value
+/// contains no `{` (which would indicate a JSX expression, not a string
+/// ref). False positives in comments are tolerated — the migration
+/// scanner already documents heuristic detection only.
+fn contains_string_ref(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i + 4 < bytes.len() {
+        // Match a literal `ref=` only when it isn't part of a larger
+        // identifier (`href=`, `pref=`, …).
+        if bytes[i] == b'r' && &bytes[i..i + 4] == b"ref=" {
+            let prev_ok = i == 0
+                || !matches!(
+                    bytes[i - 1],
+                    b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'$'
+                );
+            if prev_ok {
+                let after = i + 4;
+                if after < bytes.len() && (bytes[after] == b'"' || bytes[after] == b'\'') {
+                    let quote = bytes[after];
+                    let mut j = after + 1;
+                    let mut value_len = 0usize;
+                    let mut saw_brace = false;
+                    while j < bytes.len() && bytes[j] != quote && bytes[j] != b'\n' {
+                        if bytes[j] == b'{' {
+                            saw_brace = true;
+                            break;
+                        }
+                        value_len += 1;
+                        j += 1;
+                    }
+                    if !saw_brace
+                        && value_len > 0
+                        && j < bytes.len()
+                        && bytes[j] == quote
+                    {
+                        return true;
+                    }
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    false
 }

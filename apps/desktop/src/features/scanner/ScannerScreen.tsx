@@ -15,6 +15,7 @@ import { useSessionStore } from '@shared/hooks/useSessionState';
 
 import { ScanActionBar } from './components/ScanActionBar';
 import { ScanDependencyCard } from './components/ScanDependencyCard';
+import { ScanReact19CompatibilityCard } from './components/ScanReact19CompatibilityCard';
 import { ScanReact19ContextCard } from './components/ScanReact19ContextCard';
 import { ScanRecommendations } from './components/ScanRecommendations';
 import { ScanRiskCard } from './components/ScanRiskCard';
@@ -371,6 +372,11 @@ function CompletedReport({
           ? { status: report.react19SupportStatus }
           : {})}
       />
+      {report.react19CompatibilityReport !== undefined ? (
+        <ScanReact19CompatibilityCard
+          report={report.react19CompatibilityReport}
+        />
+      ) : null}
       <ScanRiskCard risks={report.risks} />
       <ScanDependencyCard
         dependencies={report.dependencies}
