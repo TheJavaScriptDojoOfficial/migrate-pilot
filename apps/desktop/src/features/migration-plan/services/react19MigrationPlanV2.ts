@@ -225,6 +225,34 @@ export function buildReact19PlanStepsFromRiskEngine(scanReport: ScanReport): Rea
     });
   }
 
+  steps.push({
+    id: 'react19.final-review.signoff',
+    order: order++,
+    title: 'Finalize migration review and rollout sign-off',
+    description:
+      track === 'react-18-to-19'
+        ? 'Complete a final review focused on API compatibility changes, React 19 dependency upgrade outcomes, and validation evidence before rollout.'
+        : 'Complete a final review covering bridge outcomes, React 19 upgrade impacts, and validation evidence before rollout.',
+    phase: 'final-review',
+    track,
+    riskLevel: 'medium',
+    executionType: 'manual',
+    status: 'pending',
+    reason: 'Final review captures migration readiness decisions and release confidence.',
+    category: 'validation',
+    risk: 'medium',
+    sourceIssueCodes: [],
+    relatedRecommendationIds: [],
+    expectedChangeScope: ['Migration summary and release readiness checklist'],
+    expectedAreas: ['migration summary', 'release checklist'],
+    validationCommands: validationStrategy.finalCommands,
+    required: true,
+    approvalRequired: true,
+    requiresHumanReview: true,
+    canRunInExecution: false,
+    execution: { mode: 'manual' },
+  });
+
   return steps;
 }
 
@@ -331,7 +359,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
   );
   const pureToolingItems = toolingItems.filter((item) => !jsxTransformItems.includes(item));
 
-  if (pureToolingItems.length > 0) {
+  if (pureToolingItems.length > 0 && track !== 'react-18-to-19') {
     output.push(
       createGroupedStep(track, 'tooling', 'react19.tooling', {
         title: 'Align React 19 tooling compatibility',
@@ -342,7 +370,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
       }),
     );
   }
-  if (jsxTransformItems.length > 0) {
+  if (jsxTransformItems.length > 0 && track !== 'react-18-to-19') {
     output.push(
       createGroupedStep(track, 'jsx-transform', 'react19.jsx-transform', {
         title: 'Upgrade JSX transform configuration',
@@ -371,7 +399,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
     ...byPhase['typescript-readiness'],
     ...byPhase['routing-readiness'],
   ].filter((item) => !isValidationSignal(item));
-  if (sourceModernizationItems.length > 0) {
+  if (sourceModernizationItems.length > 0 && track !== 'react-18-to-19') {
     output.push(
       createGroupedStep(track, 'source-modernization', 'react19.source-modernization', {
         title: 'Modernize source and readiness foundations',
@@ -452,7 +480,7 @@ function resolveSkippedPhases(
     {
       phase: 'react-18-bridge',
       reason:
-        'Source project is already on React 18, so the React 18 bridge phase is not required.',
+        'Source project is already on React 18, so the React 18 bridge phase is not required. React 18 plans should focus directly on API compatibility, dependency upgrade, validation, and final review.',
     },
   ];
 }
