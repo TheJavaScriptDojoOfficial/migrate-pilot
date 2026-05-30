@@ -204,6 +204,59 @@ export interface ExecutionStepRunRaw {
   readonly error?: ExecutionErrorRaw | null;
 }
 
+/**
+ * Raw payloads returned by the Milestone 7 diff review commands.
+ *
+ * Mirrors the Rust types in `src-tauri/src/commands/diff.rs`. The UI
+ * never consumes these directly — the diff-review feature converts them
+ * into the strongly-typed
+ * {@link import('@features/diff-review').DiffReviewSession} /
+ * {@link import('@features/diff-review').DiffReviewDecision} via
+ * `diffReviewService`.
+ */
+export interface DiffCommandLogRaw {
+  readonly command: string;
+  /** `"passed" | "failed"`. */
+  readonly status: string;
+  readonly stdout?: string | null;
+  readonly stderr?: string | null;
+}
+
+export interface DiffFileRaw {
+  readonly path: string;
+  /** `"modified" | "created" | "deleted" | "renamed" | "unknown"`. */
+  readonly status: string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly diffText: string;
+  readonly isBinary?: boolean | null;
+  readonly tooLarge?: boolean | null;
+}
+
+export interface DiffReviewRaw {
+  readonly workspacePath: string;
+  readonly executionRunId: string;
+  readonly planId: string;
+  readonly planStepId: string;
+  readonly branchName?: string | null;
+  readonly loadedAt: string;
+  readonly files: readonly DiffFileRaw[];
+  readonly commandLogs: readonly DiffCommandLogRaw[];
+}
+
+export interface DiffReviewDecisionRaw {
+  /** `"approved" | "rejected"`. */
+  readonly decision: string;
+  readonly workspacePath: string;
+  readonly executionRunId: string;
+  readonly planId: string;
+  readonly planStepId: string;
+  readonly decidedAt: string;
+  readonly revertedFiles: readonly string[];
+  readonly manualCleanupFiles: readonly string[];
+  readonly commandLogs: readonly DiffCommandLogRaw[];
+}
+
 export interface CommandPayloads {
   project_select: {
     input: { suggestedPath?: string };
@@ -260,6 +313,37 @@ export interface CommandPayloads {
       stepTitle: string;
     };
     output: ExecutionStepRunRaw;
+  };
+  diff_load: {
+    input: {
+      workspacePath: string;
+      sourcePath: string;
+      executionRunId: string;
+      planId: string;
+      planStepId: string;
+      changedFiles: readonly string[];
+    };
+    output: DiffReviewRaw;
+  };
+  diff_approve: {
+    input: {
+      workspacePath: string;
+      executionRunId: string;
+      planId: string;
+      planStepId: string;
+    };
+    output: DiffReviewDecisionRaw;
+  };
+  diff_reject: {
+    input: {
+      workspacePath: string;
+      sourcePath: string;
+      executionRunId: string;
+      planId: string;
+      planStepId: string;
+      changedFiles: readonly string[];
+    };
+    output: DiffReviewDecisionRaw;
   };
   step_execute: {
     input: { sessionId: string; stepId: string };

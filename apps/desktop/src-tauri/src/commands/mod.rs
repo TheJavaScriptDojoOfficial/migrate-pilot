@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod artifact;
+pub mod diff;
 pub mod execution;
 pub mod project;
 pub mod scan;
