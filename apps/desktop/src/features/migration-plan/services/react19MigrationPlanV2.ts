@@ -14,10 +14,12 @@ import {
 
 import type {
   MigrationPlan,
+  MigrationPlanStepV2,
+  MigrationPlanStepV2Capability,
+  MigrationPlanStepV2ExecutionType,
+  MigrationPlanStepV2Risk,
   React19MigrationPlanV2,
   React19PlanPhaseSummary,
-  React19PlanStep,
-  React19PlanStepExecutionType,
   React19ValidationStrategy,
 } from '../types/migrationPlan.types';
 
@@ -66,12 +68,12 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
         finalCommands: [],
         missingCommands: [...VALIDATION_SCRIPT_PRIORITY],
       },
-      highestRisk: 'blocker',
+      highestRisk: 'high',
       summary: {
         title: 'React 19 migration plan blocked',
         description: 'Resolve eligibility blockers and regenerate the plan.',
         totalSteps: 0,
-        estimatedRisk: 'blocker',
+        estimatedRisk: 'high',
         estimatedComplexity: scanReport.projectInfo.complexity,
         approvalGates: 0,
         requiredSteps: 0,
@@ -93,9 +95,7 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
     .map((item) => item.recommendation);
   const mergedBlockedReasons = Array.from(new Set([...blockedReasons, ...riskBlockedReasons]));
 
-  const executableSteps = steps.filter(
-    (step) => step.status === 'pending' && step.canRunInExecution !== false,
-  );
+  const executableSteps = steps.filter((step) => isExecutableStep(step));
   const canExecute = mergedBlockedReasons.length === 0 && executableSteps.length > 0;
 
   return {
@@ -119,15 +119,15 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
     skippedPhases,
     phaseSummary,
     validationStrategy,
-    highestRisk: resolveHighestRisk(steps.map((step) => step.riskLevel)),
+    highestRisk: resolveHighestRisk(steps.map((step) => step.risk)),
     summary: {
       title: 'React 19 migration plan',
       description: `Track-aware React 19 plan for ${track}.`,
       totalSteps: steps.length,
-      estimatedRisk: resolveHighestRisk(steps.map((step) => step.riskLevel)),
+      estimatedRisk: resolveHighestRisk(steps.map((step) => step.risk)),
       estimatedComplexity: scanReport.projectInfo.complexity,
-      approvalGates: steps.filter((step) => step.requiresHumanReview).length,
-      requiredSteps: steps.filter((step) => step.required).length,
+      approvalGates: steps.filter((step) => step.requiresApprovalBeforeRun).length,
+      requiredSteps: steps.filter((step) => step.status !== 'skipped').length,
     },
     blockers: mergedBlockedReasons,
     warnings: validationStrategy.missingCommands.map(
@@ -154,41 +154,52 @@ export function resolveReact19PlanTrack(scanReport: ScanReport): ReactMigrationT
   return null;
 }
 
-export function buildReact19PlanStepsFromRiskEngine(scanReport: ScanReport): React19PlanStep[] {
+export function buildReact19PlanStepsFromRiskEngine(
+  scanReport: ScanReport,
+): MigrationPlanStepV2[] {
   const track = resolveReact19PlanTrack(scanReport);
   const sourceMajor = scanReport.react19MigrationContext?.sourceReactMajor;
   if (track === null || sourceMajor === undefined) return [];
 
   const validationStrategy = buildReact19ValidationStrategy(scanReport);
-  const steps: React19PlanStep[] = [];
+  const steps: MigrationPlanStepV2[] = [];
   let order = 1;
 
   if (validationStrategy.baselineCommands.length > 0) {
+    const resolution = resolveExecutorMetadata({
+      stepId: 'react19.validation.baseline',
+      phase: 'validation',
+      executionType: 'validation-only',
+      issueCodes: [],
+    });
+    const baselineExecution = mapExecutionMetadata('validation-only', resolution.executorKey);
     steps.push({
       id: 'react19.validation.baseline',
       order: order++,
+      phase: 'validation',
+      track,
       title: 'Run baseline validation in migration workspace',
       description:
         'Establish the current build/test/lint baseline inside the migration workspace before applying React 19 migration changes.',
-      phase: 'validation',
-      track,
-      riskLevel: 'medium',
-      executionType: 'validation-only',
-      status: 'pending',
       reason:
         'Baseline validation separates pre-existing project failures from migration-introduced regressions.',
-      category: 'validation',
       risk: 'medium',
-      sourceIssueCodes: [],
-      relatedRecommendationIds: [],
-      expectedChangeScope: ['Validation command output only (no file modifications)'],
-      expectedAreas: ['validation scripts'],
+      status: 'pending',
+      issueCodes: [],
+      executionType: 'validation-only',
+      ...(resolution.executorKey !== undefined ? { executorKey: resolution.executorKey } : {}),
+      capability: resolution.capability,
+      requiresWorkspace: true,
+      requiresApprovalBeforeRun: false,
+      requiresValidationAfterRun: false,
+      expectedCommands: validationStrategy.baselineCommands,
       validationCommands: validationStrategy.baselineCommands,
-      required: true,
-      approvalRequired: false,
+      rollbackStrategy: 'manual',
+      ...(baselineExecution !== undefined ? { execution: baselineExecution } : {}),
+      sourceIssueCodes: [],
+      expectedChangeScope: ['Validation command output only (no file modifications)'],
       requiresHumanReview: false,
-      canRunInExecution: true,
-      execution: { mode: 'validation' },
+      canRunInExecution: isExecutableStepCapability(resolution.capability),
     });
   }
 
@@ -198,59 +209,76 @@ export function buildReact19PlanStepsFromRiskEngine(scanReport: ScanReport): Rea
   }
 
   if (validationStrategy.finalCommands.length > 0) {
+    const resolution = resolveExecutorMetadata({
+      stepId: 'react19.validation.final',
+      phase: 'validation',
+      executionType: 'validation-only',
+      issueCodes: [],
+    });
+    const finalValidationExecution = mapExecutionMetadata('validation-only', resolution.executorKey);
     steps.push({
       id: 'react19.validation.final',
       order: order++,
+      phase: 'validation',
+      track,
       title: 'Run final React 19 migration validation',
       description:
         'Run the full validation suite after all selected migration steps to confirm project stability on the React 19 path.',
-      phase: 'validation',
-      track,
-      riskLevel: 'medium',
-      executionType: 'validation-only',
-      status: 'pending',
       reason: 'Final validation confirms the migrated state is stable and releasable.',
-      category: 'validation',
       risk: 'medium',
-      sourceIssueCodes: [],
-      relatedRecommendationIds: [],
-      expectedChangeScope: ['Validation command output only (no file modifications)'],
-      expectedAreas: ['validation scripts'],
+      status: 'pending',
+      issueCodes: [],
+      executionType: 'validation-only',
+      ...(resolution.executorKey !== undefined ? { executorKey: resolution.executorKey } : {}),
+      capability: resolution.capability,
+      requiresWorkspace: true,
+      requiresApprovalBeforeRun: false,
+      requiresValidationAfterRun: false,
+      expectedCommands: validationStrategy.finalCommands,
       validationCommands: validationStrategy.finalCommands,
-      required: true,
-      approvalRequired: false,
+      rollbackStrategy: 'manual',
+      ...(finalValidationExecution !== undefined ? { execution: finalValidationExecution } : {}),
+      sourceIssueCodes: [],
+      expectedChangeScope: ['Validation command output only (no file modifications)'],
       requiresHumanReview: false,
-      canRunInExecution: true,
-      execution: { mode: 'validation' },
+      canRunInExecution: isExecutableStepCapability(resolution.capability),
     });
   }
 
+  const finalReviewResolution = resolveExecutorMetadata({
+    stepId: 'react19.final-review.signoff',
+    phase: 'final-review',
+    executionType: 'manual',
+    issueCodes: [],
+  });
+  const finalReviewExecution = mapExecutionMetadata('manual', finalReviewResolution.executorKey);
   steps.push({
     id: 'react19.final-review.signoff',
     order: order++,
+    phase: 'final-review',
+    track,
     title: 'Finalize migration review and rollout sign-off',
     description:
       track === 'react-18-to-19'
         ? 'Complete a final review focused on API compatibility changes, React 19 dependency upgrade outcomes, and validation evidence before rollout.'
         : 'Complete a final review covering bridge outcomes, React 19 upgrade impacts, and validation evidence before rollout.',
-    phase: 'final-review',
-    track,
-    riskLevel: 'medium',
-    executionType: 'manual',
-    status: 'pending',
     reason: 'Final review captures migration readiness decisions and release confidence.',
-    category: 'validation',
     risk: 'medium',
-    sourceIssueCodes: [],
-    relatedRecommendationIds: [],
-    expectedChangeScope: ['Migration summary and release readiness checklist'],
-    expectedAreas: ['migration summary', 'release checklist'],
+    status: 'pending',
+    issueCodes: [],
+    executionType: 'manual',
+    capability: finalReviewResolution.capability,
+    requiresWorkspace: true,
+    requiresApprovalBeforeRun: true,
+    requiresValidationAfterRun: false,
+    expectedCommands: validationStrategy.finalCommands,
     validationCommands: validationStrategy.finalCommands,
-    required: true,
-    approvalRequired: true,
+    rollbackStrategy: 'manual',
+    ...(finalReviewExecution !== undefined ? { execution: finalReviewExecution } : {}),
+    sourceIssueCodes: [],
+    expectedChangeScope: ['Migration summary and release readiness checklist'],
     requiresHumanReview: true,
     canRunInExecution: false,
-    execution: { mode: 'manual' },
   });
 
   return steps;
@@ -258,14 +286,14 @@ export function buildReact19PlanStepsFromRiskEngine(scanReport: ScanReport): Rea
 
 export function groupRiskRecommendationsIntoPlanSteps(
   scanReport: ScanReport,
-): React19PlanStep[] {
+): MigrationPlanStepV2[] {
   const track = resolveReact19PlanTrack(scanReport);
   const sourceMajor = scanReport.react19MigrationContext?.sourceReactMajor;
   if (track === null || sourceMajor === undefined) return [];
 
   const riskEngine = resolveRiskEngine(scanReport);
   const byPhase = riskEngine.byPhase;
-  const output: Omit<React19PlanStep, 'order'>[] = [];
+  const output: Omit<MigrationPlanStepV2, 'order'>[] = [];
 
   const preflight = byPhase['preflight'].filter((item) => !isValidationSignal(item));
   if (preflight.length > 0) {
@@ -450,7 +478,7 @@ export function buildReact19ValidationStrategy(scanReport: ScanReport): React19V
 }
 
 export function summarizeReact19PlanPhases(
-  steps: readonly React19PlanStep[],
+  steps: readonly MigrationPlanStepV2[],
 ): React19MigrationPlanV2['phaseSummary'] {
   const out = emptyPhaseSummary();
   for (const phase of REACT_19_CANONICAL_PHASE_ORDER) {
@@ -460,8 +488,8 @@ export function summarizeReact19PlanPhases(
       totalSteps: phaseSteps.length,
       highestRisk:
         phaseSteps.length > 0
-          ? resolveHighestRisk(phaseSteps.map((step) => step.riskLevel))
-          : 'info',
+          ? resolveHighestRisk(phaseSteps.map((step) => step.risk))
+          : 'low',
       executionTypes,
     };
   }
@@ -494,7 +522,7 @@ function createGroupedStep(
     readonly description: string;
     readonly reason: string;
     readonly items: readonly React19RiskRecommendation[];
-    readonly forceExecutionType?: React19PlanStepExecutionType;
+    readonly forceExecutionType?: MigrationPlanStepV2ExecutionType;
     readonly forceRiskLevel?: React19MigrationRiskLevel;
     readonly fallbackRiskLevel?: React19MigrationRiskLevel;
     readonly forceHumanReview?: boolean;
@@ -502,14 +530,14 @@ function createGroupedStep(
     readonly fallbackIssueCode?: string;
     readonly forceCanRunInExecution?: boolean;
   },
-): Omit<React19PlanStep, 'order'> {
+): Omit<MigrationPlanStepV2, 'order'> {
   const items = config.items;
   const riskLevel =
     config.forceRiskLevel ??
     (items.length > 0
-      ? resolveHighestRisk(items.map((item) => item.riskLevel))
+      ? resolveHighestSourceRisk(items.map((item) => item.riskLevel))
       : (config.fallbackRiskLevel ?? 'medium'));
-  const executionType =
+  const executionType: MigrationPlanStepV2ExecutionType =
     config.forceExecutionType ??
     resolveStepExecutionType(items.map((item) => item.executionCapability));
   const sourceIssueCodes = Array.from(
@@ -524,7 +552,7 @@ function createGroupedStep(
   const validationCommands = Array.from(
     new Set(items.flatMap((item) => item.validation.suggestedCommands ?? [])),
   );
-  const status: React19PlanStep['status'] =
+  const status: MigrationPlanStepV2['status'] =
     items.some((item) => item.blocksPlanGeneration === true) ? 'blocked' : 'pending';
 
   const requiresHumanReview =
@@ -537,10 +565,16 @@ function createGroupedStep(
         item.riskLevel === 'high',
     );
 
-  const canRunInExecution =
-    config.forceCanRunInExecution ??
-    (status === 'pending' && executionType !== 'manual');
-  const execution = mapExecutionMetadata(executionType);
+  const executorResolution = resolveExecutorMetadata({
+    stepId: id,
+    phase,
+    executionType,
+    issueCodes: sourceIssueCodes,
+  });
+  const canRunInExecution = config.forceCanRunInExecution ?? isExecutableStepCapability(
+    executorResolution.capability,
+  );
+  const execution = mapExecutionMetadata(executionType, executorResolution.executorKey);
 
   return {
     id,
@@ -548,43 +582,58 @@ function createGroupedStep(
     description: config.description,
     phase,
     track,
-    riskLevel,
-    executionType,
-    status,
     reason: config.reason,
-    category: categoryForPhase(phase),
-    risk: riskLevel,
-    sourceIssueCodes,
-    relatedRecommendationIds: items.map((item) => item.id),
-    expectedChangeScope: expectedChangeScopeForPhase(phase),
-    expectedAreas: expectedChangeScopeForPhase(phase),
+    risk: toPlanStepRisk(riskLevel),
+    status,
+    issueCodes: sourceIssueCodes,
+    executionType,
+    ...(executorResolution.executorKey !== undefined
+      ? { executorKey: executorResolution.executorKey }
+      : {}),
+    capability:
+      status === 'blocked' ? 'blocked' : executorResolution.capability,
+    ...(status === 'blocked'
+      ? { blockedReason: 'Blocked by risk-engine eligibility or migration constraints.' }
+      : {}),
+    requiresWorkspace: true,
+    requiresApprovalBeforeRun: requiresHumanReview,
+    requiresValidationAfterRun: validationCommands.length > 0,
+    expectedChangedFiles: expectedFilesForIssueCodes(sourceIssueCodes),
+    expectedCommands: validationCommands,
     validationCommands,
-    required: riskLevel === 'blocker' || riskLevel === 'high' || phase === 'react-19-upgrade',
-    approvalRequired: requiresHumanReview,
-    requiresHumanReview,
-    ...(config.forceBlocksUpgrade === true || items.some((item) => item.blocksUpgrade === true)
-      ? { blocksUpgrade: true }
-      : {}),
-    canRunInExecution,
-    ...(items.length > 0
-      ? {
-          executionCapability: resolveDominantExecutionCapability(
-            items.map((item) => item.executionCapability),
-          ),
-        }
-      : {}),
+    rollbackStrategy:
+      phase === 'react-19-upgrade' || phase === 'react-18-bridge'
+        ? 'git-revert'
+        : 'manual',
     ...(execution !== undefined ? { execution } : {}),
+    sourceIssueCodes,
+    expectedChangeScope: expectedChangeScopeForPhase(phase),
+    requiresHumanReview,
+    canRunInExecution,
   };
 }
 
 function mapExecutionMetadata(
-  executionType: React19PlanStepExecutionType,
-): React19PlanStep['execution'] | undefined {
-  if (executionType === 'validation-only') return { mode: 'validation' };
+  executionType: MigrationPlanStepV2ExecutionType,
+  executorKey: string | undefined,
+): MigrationPlanStepV2['execution'] | undefined {
   if (executionType === 'manual') return { mode: 'manual' };
-  if (executionType === 'ai-assisted') return { mode: 'ai' };
-  if (executionType === 'scripted') return { mode: 'scripted' };
-  return { mode: 'manual' };
+  if (executionType === 'validation-only') {
+    return {
+      mode: 'validation',
+      ...(executorKey !== undefined ? { executorKey } : {}),
+    };
+  }
+  if (executionType === 'ai-assisted') {
+    return {
+      mode: 'ai',
+      ...(executorKey !== undefined ? { executorKey } : {}),
+    };
+  }
+  return {
+    mode: 'scripted',
+    ...(executorKey !== undefined ? { executorKey } : {}),
+  };
 }
 
 function resolveValidationCommands(scanReport: ScanReport): string[] {
@@ -615,7 +664,7 @@ function resolveValidationCommands(scanReport: ScanReport): string[] {
 
 function resolveStepExecutionType(
   capabilities: readonly React19RiskRecommendation['executionCapability'][],
-): React19PlanStepExecutionType {
+): MigrationPlanStepV2ExecutionType {
   if (capabilities.includes('manual')) return mapExecutionCapabilityToPlanExecutionType('manual');
   if (capabilities.includes('ai-assisted')) {
     return mapExecutionCapabilityToPlanExecutionType('ai-assisted');
@@ -629,27 +678,31 @@ function resolveStepExecutionType(
 
 function mapExecutionCapabilityToPlanExecutionType(
   capability: React19RiskRecommendation['executionCapability'],
-): React19PlanStepExecutionType {
+): MigrationPlanStepV2ExecutionType {
   if (capability === 'scriptable') return 'scripted';
   return capability;
 }
 
-function resolveDominantExecutionCapability(
-  capabilities: readonly React19RiskRecommendation['executionCapability'][],
-): React19RiskRecommendation['executionCapability'] {
-  if (capabilities.includes('manual')) return 'manual';
-  if (capabilities.includes('ai-assisted')) return 'ai-assisted';
-  if (capabilities.includes('codemod')) return 'codemod';
-  if (capabilities.includes('scriptable')) return 'scriptable';
-  return 'validation-only';
+function resolveHighestRisk(levels: readonly MigrationPlanStepV2Risk[]): MigrationPlanStepV2Risk {
+  if (levels.includes('high')) return 'high';
+  if (levels.includes('medium')) return 'medium';
+  return 'low';
 }
 
-function resolveHighestRisk(levels: readonly React19MigrationRiskLevel[]): React19MigrationRiskLevel {
+function resolveHighestSourceRisk(
+  levels: readonly React19MigrationRiskLevel[],
+): React19MigrationRiskLevel {
   if (levels.includes('blocker')) return 'blocker';
   if (levels.includes('high')) return 'high';
   if (levels.includes('medium')) return 'medium';
   if (levels.includes('low')) return 'low';
   return 'info';
+}
+
+function toPlanStepRisk(level: React19MigrationRiskLevel): MigrationPlanStepV2Risk {
+  if (level === 'blocker' || level === 'high') return 'high';
+  if (level === 'medium') return 'medium';
+  return 'low';
 }
 
 function expectedChangeScopeForPhase(phase: ReactMigrationPhase): readonly string[] {
@@ -675,24 +728,136 @@ function expectedChangeScopeForPhase(phase: ReactMigrationPhase): readonly strin
   }
 }
 
-function categoryForPhase(phase: ReactMigrationPhase): React19PlanStep['category'] {
-  switch (phase) {
-    case 'preflight':
-      return 'preflight';
-    case 'tooling':
-    case 'jsx-transform':
-      return 'tooling';
-    case 'react-18-bridge':
-      return 'bridge';
-    case 'api-compatibility':
-      return 'api';
-    case 'react-19-upgrade':
-      return 'dependency';
-    case 'source-modernization':
-      return 'typescript';
-    case 'validation':
-    case 'final-review':
-      return 'validation';
+function expectedFilesForIssueCodes(issueCodes: readonly string[]): readonly string[] {
+  const files = new Set<string>();
+  if (issueCodes.some((code) => code.includes('react-dom-render'))) {
+    files.add('src/index.*');
+  }
+  if (issueCodes.some((code) => code.includes('find-dom-node'))) {
+    files.add('src/**/*.tsx');
+  }
+  if (issueCodes.some((code) => code.includes('string-refs'))) {
+    files.add('src/**/*.jsx');
+    files.add('src/**/*.tsx');
+  }
+  if (issueCodes.some((code) => code.includes('legacy-context'))) {
+    files.add('src/**/*context*');
+  }
+  if (issueCodes.some((code) => code.includes('deprecated-lifecycle'))) {
+    files.add('src/**/*.tsx');
+    files.add('src/**/*.jsx');
+  }
+  if (issueCodes.some((code) => code.includes('node-sass'))) {
+    files.add('package.json');
+    files.add('**/*.scss');
+  }
+  return Array.from(files);
+}
+
+function isExecutableStep(step: MigrationPlanStepV2): boolean {
+  if (step.status !== 'pending') return false;
+  return isExecutableStepCapability(step.capability);
+}
+
+function isExecutableStepCapability(capability: MigrationPlanStepV2Capability): boolean {
+  return capability !== 'manual-only' && capability !== 'blocked';
+}
+
+function resolveExecutorMetadata(input: {
+  readonly stepId: string;
+  readonly phase: ReactMigrationPhase;
+  readonly executionType: MigrationPlanStepV2ExecutionType;
+  readonly issueCodes: readonly string[];
+}): { readonly executorKey?: string; readonly capability: MigrationPlanStepV2Capability } {
+  const executorKey = resolveExecutorKey(input.stepId, input.phase, input.issueCodes);
+  if (input.executionType === 'manual') {
+    return { capability: 'manual-only' };
+  }
+  if (executorKey === undefined) {
+    return {
+      executorKey: fallbackExecutorKey(input.executionType),
+      capability: 'not-yet-supported',
+    };
+  }
+  return {
+    executorKey,
+    capability: 'not-yet-supported',
+  };
+}
+
+function resolveExecutorKey(
+  stepId: string,
+  phase: ReactMigrationPhase,
+  issueCodes: readonly string[],
+): string | undefined {
+  if (stepId === 'react19.validation.baseline') return 'validation.baseline';
+  if (stepId === 'react19.validation.final') return 'validation.final';
+  if (stepId === 'react19.bridge.react18') return 'react.bridge18';
+  if (stepId === 'react19.dependencies.react-upgrade') return 'dependency.react19-upgrade';
+  if (stepId === 'react19.preflight.prerequisites') return 'manual.review';
+  if (stepId === 'react19.final-review.signoff') return 'manual.review';
+
+  if (issueCodes.includes('build-tool-react-scripts-very-old')) {
+    return 'tooling.react-scripts';
+  }
+  if (
+    issueCodes.some(
+      (code) =>
+        code === 'jsx-transform-classic' || code === 'jsx-transform-config-not-detected',
+    )
+  ) {
+    return 'tooling.jsx-transform';
+  }
+  if (
+    issueCodes.some((code) =>
+      [
+        'react-dom-render-detected',
+        'react-dom-hydrate-detected',
+        'unmount-component-at-node-detected',
+        'unstable-render-subtree-detected',
+        'create-factory-detected',
+      ].includes(code),
+    )
+  ) {
+    return 'api.legacy-render';
+  }
+  if (issueCodes.includes('find-dom-node-detected')) return 'api.find-dom-node';
+  if (issueCodes.includes('string-refs-detected')) return 'api.string-refs';
+  if (issueCodes.includes('legacy-context-detected')) return 'api.legacy-context';
+  if (issueCodes.includes('deprecated-lifecycle-detected')) return 'api.unsafe-lifecycle';
+  if (issueCodes.includes('node-sass-detected')) return 'dependency.node-sass';
+  if (
+    issueCodes.some((code) =>
+      ['typescript-not-configured', 'typescript-dependency-missing-but-files-present'].includes(
+        code,
+      ),
+    )
+  ) {
+    return 'source.typescript-readiness';
+  }
+
+  if (phase === 'validation') return 'validation.final';
+  if (phase === 'tooling') return 'tooling.react-scripts';
+  if (phase === 'jsx-transform') return 'tooling.jsx-transform';
+  if (phase === 'react-18-bridge') return 'react.bridge18';
+  if (phase === 'react-19-upgrade') return 'dependency.react19-upgrade';
+  if (phase === 'source-modernization') return 'source.typescript-readiness';
+  if (phase === 'api-compatibility') return 'api.legacy-render';
+  return undefined;
+}
+
+function fallbackExecutorKey(executionType: MigrationPlanStepV2ExecutionType): string {
+  switch (executionType) {
+    case 'scripted':
+      return 'tooling.react-scripts';
+    case 'codemod':
+      return 'api.legacy-render';
+    case 'ai-assisted':
+      return 'manual.review';
+    case 'validation-only':
+      return 'validation.final';
+    case 'manual':
+      return 'manual.review';
   }
 }
 
@@ -724,15 +889,15 @@ function buildPrerequisites(
 
 function emptyPhaseSummary(): Record<ReactMigrationPhase, React19PlanPhaseSummary> {
   return {
-    preflight: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    tooling: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'react-18-bridge': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'api-compatibility': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'jsx-transform': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'react-19-upgrade': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'source-modernization': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    validation: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'final-review': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    preflight: { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    tooling: { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    'react-18-bridge': { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    'api-compatibility': { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    'jsx-transform': { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    'react-19-upgrade': { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    'source-modernization': { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    validation: { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
+    'final-review': { totalSteps: 0, highestRisk: 'low', executionTypes: [] },
   };
 }
 

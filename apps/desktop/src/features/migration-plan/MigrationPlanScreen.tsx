@@ -35,6 +35,7 @@ import {
   PLAN_STATUS_KIND,
   PLAN_STATUS_LABEL,
 } from './components/migrationPlanPresentation';
+import { isExecutableMigrationPlanStep } from './types/migrationPlan.types';
 import {
   selectPlan,
   selectPlanError,
@@ -70,7 +71,7 @@ export function MigrationPlanScreen(): JSX.Element {
   }, [scanReport?.id, clearPlanIfScanChanges]);
 
   const executableSteps =
-    plan?.steps.filter((step) => step.status === 'pending' && step.canRunInExecution !== false) ?? [];
+    plan?.steps.filter((step) => isExecutableMigrationPlanStep(step)) ?? [];
   const canApprove =
     planStatus === 'ready' &&
     plan !== undefined &&
@@ -420,7 +421,7 @@ function PhaseBreakdownCard({
         {REACT_19_CANONICAL_PHASE_ORDER.map((phase) => {
           const phaseSummary = plan.phaseSummary[phase];
           const status =
-            phaseSummary.totalSteps === 0 ? 'skipped' : phaseSummary.highestRisk === 'blocker' ? 'blocked' : 'ready';
+            phaseSummary.totalSteps === 0 ? 'skipped' : phaseSummary.highestRisk === 'high' ? 'blocked' : 'ready';
           return (
             <div
               key={phase}
@@ -480,8 +481,8 @@ function PlanStepsCard({
                   {String(step.order).padStart(2, '0')}
                 </Badge>
                 <p className="text-xs font-semibold text-ink">{step.title}</p>
-                <Badge tone={riskTone(step.riskLevel)} variant="soft" withDot uppercase>
-                  {step.riskLevel}
+                <Badge tone={riskTone(step.risk)} variant="soft" withDot uppercase>
+                  {step.risk}
                 </Badge>
                 <Badge tone="neutral" variant="outline">
                   {getReactMigrationPhaseLabel(step.phase)}
@@ -493,29 +494,47 @@ function PlanStepsCard({
                   {step.executionType}
                 </Badge>
                 <Badge
-                  tone={step.requiresHumanReview ? 'warning' : 'success'}
+                  tone={
+                    step.capability === 'available'
+                      ? 'success'
+                      : step.capability === 'not-yet-supported'
+                        ? 'warning'
+                        : step.capability === 'blocked'
+                          ? 'danger'
+                          : 'neutral'
+                  }
                   variant="soft"
                   uppercase
                 >
-                  {step.requiresHumanReview ? 'Human review' : 'Auto-review'}
+                  {step.capability}
+                </Badge>
+                <Badge
+                  tone={step.requiresApprovalBeforeRun ? 'warning' : 'success'}
+                  variant="soft"
+                  uppercase
+                >
+                  {step.requiresApprovalBeforeRun ? 'Approval required' : 'No approval gate'}
                 </Badge>
               </div>
               <p className="mt-2 text-xs text-ink-muted">{step.description}</p>
               <p className="mt-2 text-2xs text-ink-subtle">
                 Reason: {step.reason}
               </p>
+              <p className="mt-1 text-2xs text-ink-subtle">
+                Executor: {step.executorKey ?? 'manual-only (no executor)'}
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {step.validationCommands.map((command) => (
+                {(step.validationCommands ?? []).map((command) => (
                   <Badge key={command} tone="info" variant="soft" className="font-mono">
                     {command}
                   </Badge>
                 ))}
               </div>
               <div className="mt-2 text-2xs text-ink-subtle">
-                Issue codes: {step.sourceIssueCodes.join(', ') || 'none'}
+                Issue codes: {step.issueCodes.join(', ') || 'none'}
               </div>
               <div className="mt-1 text-2xs text-ink-subtle">
-                Change scope: {step.expectedChangeScope.join(' · ') || 'n/a'}
+                Change scope: {(step.expectedChangeScope ?? []).join(' · ') || 'n/a'}
               </div>
             </li>
           ))}
@@ -601,9 +620,8 @@ function Stat({
   );
 }
 
-function riskTone(risk: 'blocker' | 'high' | 'medium' | 'low' | 'info'): BadgeTone {
-  if (risk === 'blocker' || risk === 'high') return 'danger';
+function riskTone(risk: 'high' | 'medium' | 'low'): BadgeTone {
+  if (risk === 'high') return 'danger';
   if (risk === 'medium') return 'warning';
-  if (risk === 'low') return 'success';
-  return 'neutral';
+  return 'success';
 }

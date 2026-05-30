@@ -1,13 +1,11 @@
 import { Badge } from '@shared/ui/Badge';
 import { Icon } from '@shared/ui/Icon';
 import { cn } from '@shared/utils/cn';
+import { getReactMigrationPhaseLabel } from '@features/react19-migration';
 
 import type { MigrationStep } from '../types/migrationPlan.types';
 
 import {
-  CATEGORY_ICON,
-  CATEGORY_LABEL,
-  CATEGORY_TONE,
   RISK_TONE,
   STEP_STATUS_TONE,
 } from './migrationPlanPresentation';
@@ -40,28 +38,16 @@ export function MigrationPlanStepCard({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold text-ink">{step.title}</p>
-          <Badge
-            tone={CATEGORY_TONE[step.category]}
-            variant="soft"
-            uppercase
-            className="inline-flex items-center gap-1"
-          >
-            <Icon name={CATEGORY_ICON[step.category]} className="h-3 w-3" />
-            {CATEGORY_LABEL[step.category]}
+          <Badge tone="neutral" variant="outline">
+            {getReactMigrationPhaseLabel(step.phase)}
+          </Badge>
+          <Badge tone="neutral" variant="outline">
+            {step.track}
           </Badge>
           <Badge tone={RISK_TONE[step.risk]} variant="soft" withDot uppercase>
             {step.risk} risk
           </Badge>
-          {step.required ? (
-            <Badge tone="warning" variant="outline" uppercase>
-              Required
-            </Badge>
-          ) : (
-            <Badge tone="neutral" variant="outline" uppercase>
-              Optional
-            </Badge>
-          )}
-          {step.approvalRequired ? (
+          {step.requiresApprovalBeforeRun ? (
             <Badge tone="accent" variant="soft" uppercase>
               <Icon name="check-circle" className="h-3 w-3" />
               Human approval
@@ -81,21 +67,11 @@ export function MigrationPlanStepCard({
           <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{step.reason}</p>
         </div>
 
-        {step.expectedFiles !== undefined && step.expectedFiles.length > 0 ? (
+        {step.expectedChangedFiles !== undefined && step.expectedChangedFiles.length > 0 ? (
           <DetailRow label="Expected files">
-            {step.expectedFiles.map((f) => (
+            {step.expectedChangedFiles.map((f) => (
               <Badge key={f} tone="neutral" variant="soft" className="font-mono">
                 {f}
-              </Badge>
-            ))}
-          </DetailRow>
-        ) : null}
-
-        {step.expectedAreas !== undefined && step.expectedAreas.length > 0 ? (
-          <DetailRow label="Expected areas">
-            {step.expectedAreas.map((a) => (
-              <Badge key={a} tone="neutral" variant="outline" className="font-mono">
-                {a}
               </Badge>
             ))}
           </DetailRow>
@@ -111,19 +87,11 @@ export function MigrationPlanStepCard({
           </DetailRow>
         ) : null}
 
-        {step.dependsOn !== undefined && step.dependsOn.length > 0 ? (
-          <DetailRow label="Depends on">
-            {step.dependsOn.map((dep) => (
-              <span
-                key={dep}
-                className="font-mono text-[10px] text-ink-faint"
-                title={dep}
-              >
-                {dep}
-              </span>
-            ))}
-          </DetailRow>
-        ) : null}
+        <DetailRow label="Executor">
+          <Badge tone="info" variant="outline" className="font-mono">
+            {step.executorKey ?? 'manual-only'}
+          </Badge>
+        </DetailRow>
       </div>
     </li>
   );

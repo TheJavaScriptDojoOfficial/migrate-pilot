@@ -58,8 +58,6 @@ export const CATEGORY_TONE: Record<MigrationStepCategory, BadgeTone> = {
 
 /** Risk → badge tone (matches the scanner risk card). */
 export const RISK_TONE: Record<MigrationStepRisk, BadgeTone> = {
-  blocker: 'danger',
-  info: 'neutral',
   low: 'success',
   medium: 'warning',
   high: 'danger',
@@ -88,6 +86,9 @@ export const PLAN_STATUS_LABEL: Record<MigrationPlanStatus, string> = {
 /** Plan-time status → tone shown on a step row. */
 export const STEP_STATUS_TONE: Record<MigrationStepStatus, BadgeTone> = {
   pending: 'neutral',
+  running: 'info',
+  completed: 'success',
+  failed: 'danger',
   skipped: 'warning',
   blocked: 'danger',
 };

@@ -1,8 +1,6 @@
-import type { ScanIssueCode, ScanReport } from '@features/scanner';
+import type { ScanReport } from '@features/scanner';
 import type {
-  React19ExecutionCapability,
   ReactMigrationPhase,
-  React19MigrationRiskLevel,
   ReactMigrationTrack,
 } from '@features/react19-migration';
 
@@ -14,8 +12,8 @@ export type MigrationPlanStatus =
   | 'error'
   | 'approved';
 
-export type React19PlanStepStatus = 'pending' | 'skipped' | 'blocked';
-export type MigrationStepStatus = React19PlanStepStatus;
+export type React19PlanStepStatus = MigrationPlanStepV2Status;
+export type MigrationStepStatus = MigrationPlanStepV2Status;
 
 export type MigrationPlanStepV2Risk = 'low' | 'medium' | 'high';
 export type MigrationPlanStepV2Status =
@@ -23,7 +21,8 @@ export type MigrationPlanStepV2Status =
   | 'running'
   | 'completed'
   | 'failed'
-  | 'skipped';
+  | 'skipped'
+  | 'blocked';
 export type MigrationPlanStepV2ExecutionType =
   | 'scripted'
   | 'codemod'
@@ -60,7 +59,7 @@ export interface MigrationPlanStepV2 {
   readonly risk: MigrationPlanStepV2Risk;
   readonly status: MigrationPlanStepV2Status;
 
-  readonly issueCodes: readonly ScanIssueCode[];
+  readonly issueCodes: readonly string[];
 
   readonly executionType: MigrationPlanStepV2ExecutionType;
   readonly executorKey?: string;
@@ -77,6 +76,21 @@ export interface MigrationPlanStepV2 {
   readonly validationCommands?: readonly string[];
 
   readonly rollbackStrategy: MigrationPlanStepV2RollbackStrategy;
+
+  /**
+   * Backward-compatible execution metadata for the current execution engine.
+   * Planner V2 owns `executionType`/`executorKey`; this field is derived.
+   */
+  readonly execution?: MigrationStepExecution;
+
+  /**
+   * Transitional fields retained so older UI/screens can keep rendering while
+   * migrating to V2-only fields.
+   */
+  readonly sourceIssueCodes?: readonly string[];
+  readonly expectedChangeScope?: readonly string[];
+  readonly requiresHumanReview?: boolean;
+  readonly canRunInExecution?: boolean;
 }
 
 export type React19PlanStepExecutionType = MigrationPlanStepV2ExecutionType;
@@ -93,7 +107,7 @@ export interface MigrationStepExecution {
   readonly params?: Readonly<Record<string, unknown>>;
 }
 
-export type MigrationStepRisk = React19MigrationRiskLevel;
+export type MigrationStepRisk = MigrationPlanStepV2Risk;
 export type MigrationStepCategory =
   | 'preflight'
   | 'validation'
@@ -105,34 +119,8 @@ export type MigrationStepCategory =
   | 'routing'
   | 'testing';
 
-export interface React19PlanStep {
-  readonly id: string;
-  readonly order: number;
-  readonly title: string;
-  readonly description: string;
-  readonly phase: ReactMigrationPhase;
-  readonly track: ReactMigrationTrack;
-  readonly riskLevel: React19MigrationRiskLevel;
-  readonly executionType: React19PlanStepExecutionType;
-  readonly status: React19PlanStepStatus;
-  readonly reason: string;
-  readonly category: MigrationStepCategory;
-  readonly risk: React19MigrationRiskLevel;
-  readonly sourceIssueCodes: readonly string[];
-  readonly relatedRecommendationIds: readonly string[];
-  readonly expectedChangeScope: readonly string[];
-  readonly expectedAreas?: readonly string[];
-  readonly expectedFiles?: readonly string[];
-  readonly validationCommands: readonly string[];
-  readonly dependsOn?: readonly string[];
-  readonly required: boolean;
-  readonly approvalRequired: boolean;
-  readonly requiresHumanReview: boolean;
-  readonly blocksUpgrade?: boolean;
-  readonly canRunInExecution?: boolean;
-  readonly executionCapability?: React19ExecutionCapability;
-  readonly execution?: MigrationStepExecution;
-}
+/** @deprecated Use `MigrationPlanStepV2`. */
+export type React19PlanStep = MigrationPlanStepV2;
 
 export type MigrationStep = React19PlanStep;
 
@@ -145,7 +133,7 @@ export interface React19ValidationStrategy {
 
 export interface React19PlanPhaseSummary {
   readonly totalSteps: number;
-  readonly highestRisk: React19MigrationRiskLevel;
+  readonly highestRisk: MigrationPlanStepV2Risk;
   readonly executionTypes: readonly React19PlanStepExecutionType[];
 }
 
@@ -174,12 +162,12 @@ export interface React19MigrationPlanV2 {
   }[];
   readonly phaseSummary: Readonly<Record<ReactMigrationPhase, React19PlanPhaseSummary>>;
   readonly validationStrategy: React19ValidationStrategy;
-  readonly highestRisk: React19MigrationRiskLevel;
+  readonly highestRisk: MigrationPlanStepV2Risk;
   readonly summary: {
     readonly title: string;
     readonly description: string;
     readonly totalSteps: number;
-    readonly estimatedRisk: React19MigrationRiskLevel;
+    readonly estimatedRisk: MigrationPlanStepV2Risk;
     readonly estimatedComplexity: 'small' | 'medium' | 'large';
     readonly approvalGates: number;
     readonly requiredSteps: number;
@@ -213,4 +201,10 @@ export interface MigrationPlanState {
   readonly error?: MigrationPlanError;
   readonly approved: boolean;
   readonly scanReportId?: string;
+}
+
+export function isExecutableMigrationPlanStep(step: MigrationPlanStepV2): boolean {
+  if (step.status !== 'pending') return false;
+  if (step.capability === 'manual-only' || step.capability === 'blocked') return false;
+  return true;
 }

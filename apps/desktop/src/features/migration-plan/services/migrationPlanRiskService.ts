@@ -55,7 +55,7 @@ export function estimatePlanRisk(
 export function countApprovalGates(steps: readonly MigrationStep[]): number {
   let count = 0;
   for (const step of steps) {
-    if (step.approvalRequired) count += 1;
+    if (step.requiresApprovalBeforeRun) count += 1;
   }
   return count;
 }
@@ -66,7 +66,7 @@ export function countApprovalGates(steps: readonly MigrationStep[]): number {
 export function countRequiredSteps(steps: readonly MigrationStep[]): number {
   let count = 0;
   for (const step of steps) {
-    if (step.required) count += 1;
+    if (step.status !== 'skipped') count += 1;
   }
   return count;
 }
