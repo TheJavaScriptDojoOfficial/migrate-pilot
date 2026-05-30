@@ -39,6 +39,8 @@ pub fn run() {
             commands::scan::scan_get_report,
             commands::workspace::workspace_preflight,
             commands::workspace::workspace_create,
+            commands::execution::execution_check_capability,
+            commands::execution::execution_run_step,
             commands::step::step_execute,
             commands::validation::step_validate,
             commands::artifact::artifact_read_text,

@@ -148,6 +148,62 @@ export interface WorkspaceCreationResultRaw {
   readonly commandLogs: readonly WorkspaceCommandLogRaw[];
 }
 
+/**
+ * Raw payloads returned by the Milestone 6 execution commands.
+ *
+ * Mirrors the Rust types in `src-tauri/src/commands/execution.rs`. The UI
+ * never consumes these directly — the execution feature converts them into
+ * the strongly-typed
+ * {@link import('@features/execution').ExecutionStepRun} /
+ * {@link import('@features/execution').ExecutionCapability} via
+ * `executionService`.
+ */
+export interface ExecutionCapabilityRaw {
+  readonly planStepId: string;
+  readonly executable: boolean;
+  /** Always `"scripted"` when `executable` is true. */
+  readonly executorType?: string | null;
+  readonly reason: string;
+}
+
+export interface ExecutionLogEntryRaw {
+  readonly timestamp: string;
+  /** `"info" | "warning" | "error" | "success"`. */
+  readonly level: string;
+  readonly message: string;
+  readonly detail?: string | null;
+}
+
+export interface ExecutionChangedFileRaw {
+  readonly path: string;
+  /** `"modified" | "created" | "deleted"`. */
+  readonly changeType: string;
+  readonly summary: string;
+}
+
+export interface ExecutionErrorRaw {
+  readonly code: string;
+  readonly message: string;
+  readonly detail?: string | null;
+}
+
+export interface ExecutionStepRunRaw {
+  readonly id: string;
+  readonly planId: string;
+  readonly planStepId: string;
+  readonly stepTitle: string;
+  readonly workspacePath: string;
+  /** `"running" | "completed" | "failed"`. */
+  readonly status: string;
+  readonly startedAt: string;
+  readonly completedAt?: string | null;
+  /** Always `"scripted"` in Milestone 6. */
+  readonly executor: string;
+  readonly changedFiles: readonly ExecutionChangedFileRaw[];
+  readonly logs: readonly ExecutionLogEntryRaw[];
+  readonly error?: ExecutionErrorRaw | null;
+}
+
 export interface CommandPayloads {
   project_select: {
     input: { suggestedPath?: string };
@@ -185,6 +241,25 @@ export interface CommandPayloads {
       strategy: 'git-worktree' | 'copy';
     };
     output: WorkspaceCreationResultRaw;
+  };
+  execution_check_capability: {
+    input: {
+      workspacePath: string;
+      sourcePath: string;
+      planStepId: string;
+      stepTitle: string;
+    };
+    output: ExecutionCapabilityRaw;
+  };
+  execution_run_step: {
+    input: {
+      workspacePath: string;
+      sourcePath: string;
+      planId: string;
+      planStepId: string;
+      stepTitle: string;
+    };
+    output: ExecutionStepRunRaw;
   };
   step_execute: {
     input: { sessionId: string; stepId: string };

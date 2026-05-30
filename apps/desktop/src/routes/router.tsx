@@ -8,7 +8,7 @@ import { ScannerScreen } from '@features/scanner/ScannerScreen';
 import { ScanReportScreen } from '@features/report/ScanReportScreen';
 import { MigrationPlanScreen } from '@features/migration-plan/MigrationPlanScreen';
 import { WorkspaceScreen } from '@features/workspace/WorkspaceScreen';
-import { ExecutionDashboardScreen } from '@features/execution/ExecutionDashboardScreen';
+import { ExecutionScreen } from '@features/execution';
 import { DiffReviewScreen } from '@features/diff-review/DiffReviewScreen';
 import { MigrationSummaryScreen } from '@features/summary/MigrationSummaryScreen';
 import { SettingsScreen } from '@features/settings/SettingsScreen';
@@ -26,7 +26,7 @@ export const router = createBrowserRouter([
       { path: ROUTES.scanReport, element: <ScanReportScreen /> },
       { path: ROUTES.migrationPlan, element: <MigrationPlanScreen /> },
       { path: ROUTES.workspace, element: <WorkspaceScreen /> },
-      { path: ROUTES.execution, element: <ExecutionDashboardScreen /> },
+      { path: ROUTES.execution, element: <ExecutionScreen /> },
       { path: ROUTES.diffReview, element: <DiffReviewScreen /> },
       { path: ROUTES.summary, element: <MigrationSummaryScreen /> },
       { path: ROUTES.settings, element: <SettingsScreen /> },
