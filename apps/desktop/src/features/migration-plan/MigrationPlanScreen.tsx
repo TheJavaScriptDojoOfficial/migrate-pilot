@@ -75,8 +75,6 @@ export function MigrationPlanScreen(): JSX.Element {
   const canApprove =
     planStatus === 'ready' &&
     plan !== undefined &&
-    plan.canExecute &&
-    executableSteps.length > 0 &&
     !gateBlocked;
   const canContinue = planStatus === 'approved';
   const canGenerate = hasScanReport && planStatus !== 'generating' && !gateBlocked;
@@ -128,7 +126,7 @@ export function MigrationPlanScreen(): JSX.Element {
                       ? 'React 19 eligibility gate blocks plan approval.'
                       : planStatus === 'blocked'
                         ? 'Plan is blocked. Resolve blocked reasons first.'
-                        : 'Plan must be ready and executable before approval.',
+                        : 'Plan must be ready before approval.',
                 })}
             {...(canContinue
               ? {}
@@ -523,6 +521,11 @@ function PlanStepsCard({
               <p className="mt-1 text-2xs text-ink-subtle">
                 Executor: {step.executorKey ?? 'manual-only (no executor)'}
               </p>
+              {step.capability !== 'available' ? (
+                <p className="mt-1 text-2xs text-ink-subtle">
+                  Auto-run blocked: {step.blockedReason}
+                </p>
+              ) : null}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {(step.validationCommands ?? []).map((command) => (
                   <Badge key={command} tone="info" variant="soft" className="font-mono">

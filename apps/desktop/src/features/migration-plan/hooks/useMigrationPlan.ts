@@ -26,7 +26,6 @@ import { useWorkflowProgressStore } from '@shared/hooks/useWorkflowProgress';
 
 import { generateMigrationPlan } from '../services/migrationPlanGenerator';
 import { resolveReact19PlanGenerationGate } from '@features/react19-migration';
-import { isExecutableMigrationPlanStep } from '../types/migrationPlan.types';
 import type {
   MigrationPlan,
   MigrationPlanError,
@@ -128,10 +127,10 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
       return;
     }
 
-    const executableSteps = plan.steps.filter((step) =>
-      isExecutableMigrationPlanStep(step),
+    const hasBlockingStep = plan.steps.some(
+      (step) => step.capability === 'blocked' || step.status === 'blocked',
     );
-    const isBlocked = !plan.canExecute || executableSteps.length === 0;
+    const isBlocked = plan.blockedReasons.length > 0 || hasBlockingStep;
 
     set({
       status: isBlocked ? 'blocked' : 'ready',
@@ -149,11 +148,6 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
     const { plan, status } = get();
     if (plan === undefined) return;
     if (status !== 'ready') return;
-    if (!plan.canExecute) return;
-    const hasExecutableStep = plan.steps.some((step) =>
-      isExecutableMigrationPlanStep(step),
-    );
-    if (!hasExecutableStep) return;
 
     const approvedAt = new Date().toISOString();
     const approvedPlan: MigrationPlan = {

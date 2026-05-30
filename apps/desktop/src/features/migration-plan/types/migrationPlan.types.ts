@@ -63,8 +63,11 @@ export interface MigrationPlanStepV2 {
 
   readonly executionType: MigrationPlanStepV2ExecutionType;
   readonly executorKey?: string;
-
   readonly capability: MigrationPlanStepV2Capability;
+  /**
+   * Required when capability is `not-yet-supported`, `manual-only`, or
+   * `blocked`; omitted for `available` steps.
+   */
   readonly blockedReason?: string;
 
   readonly requiresWorkspace: boolean;
@@ -203,8 +206,13 @@ export interface MigrationPlanState {
   readonly scanReportId?: string;
 }
 
+export function requiresBlockedReasonForCapability(
+  capability: MigrationPlanStepV2Capability,
+): boolean {
+  return capability !== 'available';
+}
+
 export function isExecutableMigrationPlanStep(step: MigrationPlanStepV2): boolean {
   if (step.status !== 'pending') return false;
-  if (step.capability === 'manual-only' || step.capability === 'blocked') return false;
-  return true;
+  return step.capability === 'available';
 }

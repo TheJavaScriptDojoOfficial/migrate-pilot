@@ -24,6 +24,7 @@ import type {
 } from '../types/migrationPlan.types';
 
 const VALIDATION_SCRIPT_PRIORITY = ['build', 'test', 'lint', 'typecheck'] as const;
+const SUPPORTED_SCRIPTED_EXECUTOR_KEYS = new Set<string>(['package-json-dependency-update']);
 
 export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19MigrationPlanV2 {
   const gate = resolveReact19PlanGenerationGate(scanReport);
@@ -171,8 +172,13 @@ export function buildReact19PlanStepsFromRiskEngine(
       phase: 'validation',
       executionType: 'validation-only',
       issueCodes: [],
+      validationCommands: validationStrategy.baselineCommands,
     });
-    const baselineExecution = mapExecutionMetadata('validation-only', resolution.executorKey);
+    const baselineExecution = mapExecutionMetadata(
+      'validation-only',
+      resolution.executorKey,
+      resolution.params,
+    );
     steps.push({
       id: 'react19.validation.baseline',
       order: order++,
@@ -189,6 +195,9 @@ export function buildReact19PlanStepsFromRiskEngine(
       executionType: 'validation-only',
       ...(resolution.executorKey !== undefined ? { executorKey: resolution.executorKey } : {}),
       capability: resolution.capability,
+      ...(resolution.blockedReason !== undefined
+        ? { blockedReason: resolution.blockedReason }
+        : {}),
       requiresWorkspace: true,
       requiresApprovalBeforeRun: false,
       requiresValidationAfterRun: false,
@@ -214,8 +223,13 @@ export function buildReact19PlanStepsFromRiskEngine(
       phase: 'validation',
       executionType: 'validation-only',
       issueCodes: [],
+      validationCommands: validationStrategy.finalCommands,
     });
-    const finalValidationExecution = mapExecutionMetadata('validation-only', resolution.executorKey);
+    const finalValidationExecution = mapExecutionMetadata(
+      'validation-only',
+      resolution.executorKey,
+      resolution.params,
+    );
     steps.push({
       id: 'react19.validation.final',
       order: order++,
@@ -231,6 +245,9 @@ export function buildReact19PlanStepsFromRiskEngine(
       executionType: 'validation-only',
       ...(resolution.executorKey !== undefined ? { executorKey: resolution.executorKey } : {}),
       capability: resolution.capability,
+      ...(resolution.blockedReason !== undefined
+        ? { blockedReason: resolution.blockedReason }
+        : {}),
       requiresWorkspace: true,
       requiresApprovalBeforeRun: false,
       requiresValidationAfterRun: false,
@@ -251,7 +268,11 @@ export function buildReact19PlanStepsFromRiskEngine(
     executionType: 'manual',
     issueCodes: [],
   });
-  const finalReviewExecution = mapExecutionMetadata('manual', finalReviewResolution.executorKey);
+  const finalReviewExecution = mapExecutionMetadata(
+    'manual',
+    finalReviewResolution.executorKey,
+    finalReviewResolution.params,
+  );
   steps.push({
     id: 'react19.final-review.signoff',
     order: order++,
@@ -268,6 +289,9 @@ export function buildReact19PlanStepsFromRiskEngine(
     issueCodes: [],
     executionType: 'manual',
     capability: finalReviewResolution.capability,
+    ...(finalReviewResolution.blockedReason !== undefined
+      ? { blockedReason: finalReviewResolution.blockedReason }
+      : {}),
     requiresWorkspace: true,
     requiresApprovalBeforeRun: true,
     requiresValidationAfterRun: false,
@@ -281,7 +305,7 @@ export function buildReact19PlanStepsFromRiskEngine(
     canRunInExecution: false,
   });
 
-  return steps;
+  return steps.map(ensureCapabilityReason);
 }
 
 export function groupRiskRecommendationsIntoPlanSteps(
@@ -570,11 +594,24 @@ function createGroupedStep(
     phase,
     executionType,
     issueCodes: sourceIssueCodes,
+    validationCommands,
   });
   const canRunInExecution = config.forceCanRunInExecution ?? isExecutableStepCapability(
     executorResolution.capability,
   );
-  const execution = mapExecutionMetadata(executionType, executorResolution.executorKey);
+  const execution = mapExecutionMetadata(
+    executionType,
+    executorResolution.executorKey,
+    executorResolution.params,
+  );
+  const capability =
+    status === 'blocked'
+      ? 'blocked'
+      : executorResolution.capability;
+  const blockedReason =
+    status === 'blocked'
+      ? 'Blocked by risk-engine eligibility or migration constraints.'
+      : executorResolution.blockedReason;
 
   return {
     id,
@@ -590,11 +627,8 @@ function createGroupedStep(
     ...(executorResolution.executorKey !== undefined
       ? { executorKey: executorResolution.executorKey }
       : {}),
-    capability:
-      status === 'blocked' ? 'blocked' : executorResolution.capability,
-    ...(status === 'blocked'
-      ? { blockedReason: 'Blocked by risk-engine eligibility or migration constraints.' }
-      : {}),
+    capability,
+    ...(blockedReason !== undefined ? { blockedReason } : {}),
     requiresWorkspace: true,
     requiresApprovalBeforeRun: requiresHumanReview,
     requiresValidationAfterRun: validationCommands.length > 0,
@@ -616,23 +650,27 @@ function createGroupedStep(
 function mapExecutionMetadata(
   executionType: MigrationPlanStepV2ExecutionType,
   executorKey: string | undefined,
+  params: Record<string, unknown> | undefined,
 ): MigrationPlanStepV2['execution'] | undefined {
   if (executionType === 'manual') return { mode: 'manual' };
   if (executionType === 'validation-only') {
     return {
       mode: 'validation',
       ...(executorKey !== undefined ? { executorKey } : {}),
+      ...(params !== undefined ? { params } : {}),
     };
   }
   if (executionType === 'ai-assisted') {
     return {
       mode: 'ai',
       ...(executorKey !== undefined ? { executorKey } : {}),
+      ...(params !== undefined ? { params } : {}),
     };
   }
   return {
     mode: 'scripted',
     ...(executorKey !== undefined ? { executorKey } : {}),
+    ...(params !== undefined ? { params } : {}),
   };
 }
 
@@ -760,7 +798,7 @@ function isExecutableStep(step: MigrationPlanStepV2): boolean {
 }
 
 function isExecutableStepCapability(capability: MigrationPlanStepV2Capability): boolean {
-  return capability !== 'manual-only' && capability !== 'blocked';
+  return capability === 'available';
 }
 
 function resolveExecutorMetadata(input: {
@@ -768,20 +806,113 @@ function resolveExecutorMetadata(input: {
   readonly phase: ReactMigrationPhase;
   readonly executionType: MigrationPlanStepV2ExecutionType;
   readonly issueCodes: readonly string[];
-}): { readonly executorKey?: string; readonly capability: MigrationPlanStepV2Capability } {
+  readonly validationCommands?: readonly string[];
+}): {
+  readonly executorKey?: string;
+  readonly params?: Record<string, unknown>;
+  readonly capability: MigrationPlanStepV2Capability;
+  readonly blockedReason?: string;
+} {
   const executorKey = resolveExecutorKey(input.stepId, input.phase, input.issueCodes);
+  const params = resolveExecutorParams(
+    input.stepId,
+    input.executionType,
+    input.issueCodes,
+  );
+
   if (input.executionType === 'manual') {
-    return { capability: 'manual-only' };
+    return {
+      ...(executorKey !== undefined ? { executorKey } : {}),
+      capability: 'manual-only',
+      blockedReason:
+        'This step requires human judgement and cannot be safely automated by Migrate Pilot yet.',
+    };
   }
+
+  if (input.executionType === 'validation-only') {
+    if ((input.validationCommands ?? []).length === 0) {
+      return {
+        ...(executorKey !== undefined ? { executorKey } : {}),
+        capability: 'blocked',
+        blockedReason:
+          'No validation commands were detected for this validation-only step.',
+      };
+    }
+    return {
+      ...(executorKey !== undefined ? { executorKey } : {}),
+      capability: 'not-yet-supported',
+      blockedReason:
+        'Validation command execution is not implemented yet. Run the listed commands manually.',
+    };
+  }
+
   if (executorKey === undefined) {
     return {
       executorKey: fallbackExecutorKey(input.executionType),
       capability: 'not-yet-supported',
+      blockedReason:
+        'No executor has been mapped for this step yet, so automatic execution is not available.',
     };
   }
+
+  if (input.executionType === 'scripted' && executorKey === 'package-json-dependency-update') {
+    if (params === undefined) {
+      return {
+        executorKey,
+        capability: 'not-yet-supported',
+        blockedReason:
+          'The package dependency executor requires deterministic params that are not available for this step yet.',
+      };
+    }
+    if (!SUPPORTED_SCRIPTED_EXECUTOR_KEYS.has(executorKey)) {
+      return {
+        executorKey,
+        capability: 'not-yet-supported',
+        blockedReason: `Executor "${executorKey}" is declared but not supported in this build.`,
+      };
+    }
+    return {
+      executorKey,
+      params,
+      capability: 'available',
+    };
+  }
+
+  if (input.executionType === 'scripted') {
+    return {
+      executorKey,
+      ...(params !== undefined ? { params } : {}),
+      capability: 'not-yet-supported',
+      blockedReason:
+        'A scripted executor is not implemented for this step yet. Keep this as a manual follow-up for now.',
+    };
+  }
+
+  if (input.executionType === 'codemod') {
+    return {
+      executorKey,
+      ...(params !== undefined ? { params } : {}),
+      capability: 'not-yet-supported',
+      blockedReason:
+        'Codemod execution is planned but the codemod runner is not wired yet.',
+    };
+  }
+
+  if (input.executionType === 'ai-assisted') {
+    return {
+      executorKey,
+      ...(params !== undefined ? { params } : {}),
+      capability: 'not-yet-supported',
+      blockedReason:
+        'AI-assisted execution is not wired into the execution engine yet.',
+    };
+  }
+
   return {
     executorKey,
+    ...(params !== undefined ? { params } : {}),
     capability: 'not-yet-supported',
+    blockedReason: 'Automatic execution for this step is not available yet.',
   };
 }
 
@@ -790,12 +921,12 @@ function resolveExecutorKey(
   phase: ReactMigrationPhase,
   issueCodes: readonly string[],
 ): string | undefined {
-  if (stepId === 'react19.validation.baseline') return 'validation.baseline';
-  if (stepId === 'react19.validation.final') return 'validation.final';
-  if (stepId === 'react19.bridge.react18') return 'react.bridge18';
-  if (stepId === 'react19.dependencies.react-upgrade') return 'dependency.react19-upgrade';
-  if (stepId === 'react19.preflight.prerequisites') return 'manual.review';
-  if (stepId === 'react19.final-review.signoff') return 'manual.review';
+  if (stepId === 'react19.validation.baseline') return 'validation.command-runner';
+  if (stepId === 'react19.validation.final') return 'validation.command-runner';
+  if (stepId === 'react19.bridge.react18') return 'ai-source-transform';
+  if (stepId === 'react19.dependencies.react-upgrade') return 'package-json-dependency-update';
+  if (stepId === 'react19.preflight.prerequisites') return 'manual-review';
+  if (stepId === 'react19.final-review.signoff') return 'manual-review';
 
   if (issueCodes.includes('build-tool-react-scripts-very-old')) {
     return 'tooling.react-scripts';
@@ -825,7 +956,7 @@ function resolveExecutorKey(
   if (issueCodes.includes('string-refs-detected')) return 'api.string-refs';
   if (issueCodes.includes('legacy-context-detected')) return 'api.legacy-context';
   if (issueCodes.includes('deprecated-lifecycle-detected')) return 'api.unsafe-lifecycle';
-  if (issueCodes.includes('node-sass-detected')) return 'dependency.node-sass';
+  if (issueCodes.includes('node-sass-detected')) return 'package-json-dependency-update';
   if (
     issueCodes.some((code) =>
       ['typescript-not-configured', 'typescript-dependency-missing-but-files-present'].includes(
@@ -836,29 +967,69 @@ function resolveExecutorKey(
     return 'source.typescript-readiness';
   }
 
-  if (phase === 'validation') return 'validation.final';
-  if (phase === 'tooling') return 'tooling.react-scripts';
-  if (phase === 'jsx-transform') return 'tooling.jsx-transform';
-  if (phase === 'react-18-bridge') return 'react.bridge18';
-  if (phase === 'react-19-upgrade') return 'dependency.react19-upgrade';
-  if (phase === 'source-modernization') return 'source.typescript-readiness';
-  if (phase === 'api-compatibility') return 'api.legacy-render';
+  if (phase === 'validation') return 'validation.command-runner';
+  if (phase === 'tooling') return 'tsconfig-update';
+  if (phase === 'jsx-transform') return 'file-create-or-update';
+  if (phase === 'react-18-bridge') return 'ai-source-transform';
+  if (phase === 'react-19-upgrade') return 'package-json-dependency-update';
+  if (phase === 'source-modernization') return 'tsconfig-update';
+  if (phase === 'api-compatibility') return 'codemod-react-class-to-function';
   return undefined;
 }
 
 function fallbackExecutorKey(executionType: MigrationPlanStepV2ExecutionType): string {
   switch (executionType) {
     case 'scripted':
-      return 'tooling.react-scripts';
+      return 'tsconfig-update';
     case 'codemod':
-      return 'api.legacy-render';
+      return 'codemod-react-class-to-function';
     case 'ai-assisted':
-      return 'manual.review';
+      return 'ai-source-transform';
     case 'validation-only':
-      return 'validation.final';
+      return 'validation.command-runner';
     case 'manual':
-      return 'manual.review';
+      return 'manual-review';
   }
+}
+
+function resolveExecutorParams(
+  stepId: string,
+  executionType: MigrationPlanStepV2ExecutionType,
+  issueCodes: readonly string[],
+): Record<string, unknown> | undefined {
+  if (executionType !== 'scripted') return undefined;
+  if (stepId !== 'react19.dependencies.foundation') return undefined;
+  const dedupedIssueCodes = Array.from(new Set(issueCodes));
+  if (dedupedIssueCodes.length !== 1 || dedupedIssueCodes[0] !== 'node-sass-detected') {
+    return undefined;
+  }
+  return {
+    remove: [
+      {
+        name: 'node-sass',
+        from: ['dependencies', 'devDependencies', 'optionalDependencies'],
+      },
+    ],
+    add: [
+      {
+        name: 'sass',
+        version: '^1.69.0',
+        to: 'devDependencies',
+        onlyIfMissing: true,
+      },
+    ],
+  };
+}
+
+function ensureCapabilityReason(step: MigrationPlanStepV2): MigrationPlanStepV2 {
+  if (step.capability === 'available') return step;
+  if (step.blockedReason !== undefined && step.blockedReason.trim().length > 0) {
+    return step;
+  }
+  return {
+    ...step,
+    blockedReason: 'Automatic execution is not available for this step yet.',
+  };
 }
 
 function isValidationSignal(item: React19RiskRecommendation): boolean {
