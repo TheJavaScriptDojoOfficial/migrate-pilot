@@ -6,6 +6,8 @@ export * from './EmptyState';
 export * from './ErrorMessage';
 export * from './Icon';
 export * from './PageHeader';
+export * from './SessionStatusBadge';
 export * from './StatusIndicator';
 export * from './StepEyebrow';
 export * from './WorkflowSidebar';
+export * from './WorkflowStepItem';

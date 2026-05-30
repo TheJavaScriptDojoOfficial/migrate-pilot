@@ -11,6 +11,7 @@ import { WorkspaceScreen } from '@features/workspace/WorkspaceScreen';
 import { ExecutionDashboardScreen } from '@features/execution/ExecutionDashboardScreen';
 import { DiffReviewScreen } from '@features/diff-review/DiffReviewScreen';
 import { MigrationSummaryScreen } from '@features/summary/MigrationSummaryScreen';
+import { SettingsScreen } from '@features/settings/SettingsScreen';
 
 import { NotFoundScreen } from '@routes/NotFoundScreen';
 
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
       { path: ROUTES.execution, element: <ExecutionDashboardScreen /> },
       { path: ROUTES.diffReview, element: <DiffReviewScreen /> },
       { path: ROUTES.summary, element: <MigrationSummaryScreen /> },
+      { path: ROUTES.settings, element: <SettingsScreen /> },
       { path: '*', element: <NotFoundScreen /> },
     ],
   },

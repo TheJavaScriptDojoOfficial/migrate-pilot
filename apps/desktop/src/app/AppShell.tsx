@@ -2,9 +2,11 @@ import { Outlet } from 'react-router-dom';
 
 import { ActivityRail } from '@shared/ui/ActivityRail';
 import { Icon } from '@shared/ui/Icon';
+import { SessionStatusBadge } from '@shared/ui/SessionStatusBadge';
 import { StatusIndicator } from '@shared/ui/StatusIndicator';
 import { WorkflowSidebar } from '@shared/ui/WorkflowSidebar';
 import { APP_NAME, APP_VERSION } from '@shared/constants/app';
+import { useWorkflowSteps } from '@shared/hooks/useWorkflowProgress';
 
 /**
  * AppShell renders the persistent chrome of the app, following the
@@ -38,24 +40,40 @@ export function AppShell(): JSX.Element {
 }
 
 function TitleBar(): JSX.Element {
+  const { activeStep } = useWorkflowSteps();
+
   return (
-    <header className="flex h-11 shrink-0 items-center justify-between border-b border-canvas-border bg-canvas-subtle-2 pl-5 pr-4">
-      <div className="flex items-center gap-2.5">
+    <header className="flex h-11 shrink-0 items-center justify-between gap-4 border-b border-canvas-border bg-canvas-subtle-2 pl-5 pr-4">
+      <div className="flex min-w-0 items-center gap-3">
         <span className="text-sm font-semibold tracking-tight text-ink">{APP_NAME}</span>
         <span className="rounded-xs border border-canvas-border bg-canvas-overlay px-1.5 py-0.5 font-mono text-[10px] text-ink-subtle">
           v{APP_VERSION}
         </span>
+
+        <span className="hidden h-4 w-px bg-canvas-border md:block" aria-hidden />
+
+        {activeStep ? (
+          <span className="hidden min-w-0 items-center gap-2 text-2xs text-ink-subtle md:flex">
+            <Icon
+              name={activeStep.step.icon}
+              className="h-3 w-3 shrink-0 text-accent"
+            />
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-subtle">
+              {activeStep.step.shortLabel}
+            </span>
+            <span className="hidden truncate text-xs text-ink-muted lg:inline">
+              {activeStep.step.description}
+            </span>
+          </span>
+        ) : null}
       </div>
 
-      <div className="flex items-center gap-4 text-2xs text-ink-muted">
-        <span className="flex items-center gap-1.5">
+      <div className="flex items-center gap-3 text-2xs text-ink-muted">
+        <SessionStatusBadge />
+        <span className="hidden h-4 w-px bg-canvas-border sm:block" aria-hidden />
+        <span className="hidden items-center gap-1.5 sm:flex">
           <Icon name="shield" className="h-3 w-3 text-success" />
           Local-first
-        </span>
-        <span className="hidden h-4 w-px bg-canvas-border sm:block" aria-hidden />
-        <span className="hidden items-center gap-1.5 font-mono text-[11px] text-ink-subtle sm:flex">
-          <Icon name="git-branch" className="h-3 w-3" />
-          no workspace
         </span>
       </div>
     </header>

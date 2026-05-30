@@ -33,6 +33,8 @@ export type IconName =
   | 'shield'
   | 'git-branch'
   | 'rocket'
+  | 'lock'
+  | 'dot'
   | 'logo';
 
 const PATHS: Record<IconName, JSX.Element> = {
@@ -131,6 +133,13 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M16 18c1 1 1 3 1 3s-2 0-3-1" />
     </>
   ),
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="9" rx="1.8" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </>
+  ),
+  dot: <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />,
   logo: (
     <>
       <path d="M4 17V8.5a1.5 1.5 0 0 1 .8-1.32l6.5-3.6a1.5 1.5 0 0 1 1.4 0l6.5 3.6A1.5 1.5 0 0 1 20 8.5V17" />

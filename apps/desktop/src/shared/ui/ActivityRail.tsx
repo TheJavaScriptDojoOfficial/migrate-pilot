@@ -28,13 +28,29 @@ interface RailItem {
   readonly disabled?: boolean;
 }
 
+/**
+ * Workflow rail item matches any path that belongs to the V1 migration
+ * journey. Non-workflow surfaces (e.g. Settings) must be excluded so the
+ * rail correctly switches the active indicator when the user opens them.
+ */
+const WORKFLOW_PATHS: readonly string[] = [
+  ROUTES.projectSelection,
+  ROUTES.scanner,
+  ROUTES.scanReport,
+  ROUTES.migrationPlan,
+  ROUTES.workspace,
+  ROUTES.execution,
+  ROUTES.diffReview,
+  ROUTES.summary,
+];
+
 const PRIMARY_ITEMS: readonly RailItem[] = [
   {
     id: 'workflow',
     label: 'Workflow',
     icon: 'rocket',
     to: ROUTES.projectSelection,
-    matches: Object.values(ROUTES),
+    matches: WORKFLOW_PATHS,
   },
   {
     id: 'history',
@@ -46,7 +62,7 @@ const PRIMARY_ITEMS: readonly RailItem[] = [
 
 const SECONDARY_ITEMS: readonly RailItem[] = [
   { id: 'help', label: 'Documentation', icon: 'help', disabled: true },
-  { id: 'settings', label: 'Settings', icon: 'settings', disabled: true },
+  { id: 'settings', label: 'Settings', icon: 'settings', to: ROUTES.settings },
 ];
 
 export function ActivityRail(): JSX.Element {

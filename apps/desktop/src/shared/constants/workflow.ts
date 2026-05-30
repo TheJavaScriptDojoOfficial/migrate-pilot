@@ -16,6 +16,19 @@ export interface WorkflowStepDescriptor {
   readonly icon: IconName;
 }
 
+/**
+ * Per-step visual status in the WorkflowSidebar.
+ *
+ * - `completed` — step has been finished in this session (mocked in Milestone 1).
+ * - `active`    — step that matches the currently visible route.
+ * - `upcoming`  — the next reachable step in the flow.
+ * - `locked`    — gated by a prior step the user has not yet completed.
+ *
+ * The status is derived (never stored on each step) so the descriptor table
+ * stays declarative and easy to maintain.
+ */
+export type WorkflowStepStatus = 'completed' | 'active' | 'upcoming' | 'locked';
+
 export const WORKFLOW_STEPS: readonly WorkflowStepDescriptor[] = [
   {
     id: 'project',
@@ -82,3 +95,71 @@ export const WORKFLOW_STEPS: readonly WorkflowStepDescriptor[] = [
     icon: 'check-circle',
   },
 ];
+
+/** Stable id type for workflow step lookups. */
+export type WorkflowStepId = (typeof WORKFLOW_STEPS)[number]['id'];
+
+/** O(1) lookup map (built once at module load). */
+export const WORKFLOW_STEP_BY_ID: Readonly<Record<string, WorkflowStepDescriptor>> =
+  WORKFLOW_STEPS.reduce<Record<string, WorkflowStepDescriptor>>((acc, step) => {
+    acc[step.id] = step;
+    return acc;
+  }, {});
+
+/**
+ * Derive the per-step status array for the WorkflowSidebar.
+ *
+ * Pure function so it is trivially testable and avoids tying derivation
+ * to React render lifecycle. The mocked progression model is:
+ *
+ * - Steps whose id is in `completedStepIds` render as `completed`.
+ * - The step whose path matches `activePath` renders as `active`.
+ * - The first non-completed, non-active step renders as `upcoming` (ready
+ *   for the user to start).
+ * - All further steps render as `locked`.
+ *
+ * In Milestone 1 there is no real session state machine, so callers should
+ * feed an empty `completedStepIds` set. The visual treatment for each
+ * status still renders correctly — we just don't drive completion yet.
+ */
+export function deriveWorkflowStatuses(
+  activePath: string,
+  completedStepIds: ReadonlySet<string>,
+): readonly WorkflowStepStatus[] {
+  // Resolve "active" first so longer paths win over their prefixes
+  // (e.g. /scan/report should activate `scanReport`, not `scanner`).
+  // The matcher prefers exact equality, then the longest path prefix.
+  const activeIndex = resolveActiveIndex(activePath);
+
+  let upcomingClaimed = false;
+  return WORKFLOW_STEPS.map((_, index): WorkflowStepStatus => {
+    const step = WORKFLOW_STEPS[index];
+    if (step && completedStepIds.has(step.id)) {
+      return 'completed';
+    }
+    if (index === activeIndex) {
+      return 'active';
+    }
+    if (!upcomingClaimed) {
+      upcomingClaimed = true;
+      return 'upcoming';
+    }
+    return 'locked';
+  });
+}
+
+function resolveActiveIndex(activePath: string): number {
+  let bestIndex = -1;
+  let bestLength = -1;
+  for (let i = 0; i < WORKFLOW_STEPS.length; i += 1) {
+    const step = WORKFLOW_STEPS[i];
+    if (!step) continue;
+    if (activePath === step.path || activePath.startsWith(`${step.path}/`)) {
+      if (step.path.length > bestLength) {
+        bestLength = step.path.length;
+        bestIndex = i;
+      }
+    }
+  }
+  return bestIndex;
+}
