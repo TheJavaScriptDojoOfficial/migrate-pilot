@@ -177,8 +177,8 @@ export function ExecutionScreen(): JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={6} icon="play" label="Execute" />}
-        title="Execute migration"
-        subtitle="Run one approved migration step at a time. Every action writes only inside the migration workspace; the original project stays read-only."
+        title="Execute React 19 step"
+        subtitle="Run one approved React 19 migration step at a time. Every action writes only inside the migration workspace; the original project stays read-only."
         meta={
           <HeaderMeta
             status={status}

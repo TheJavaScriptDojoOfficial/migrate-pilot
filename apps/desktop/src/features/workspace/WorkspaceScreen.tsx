@@ -131,8 +131,8 @@ export function WorkspaceScreen(): JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={5} icon="workspace" label="Workspace" />}
-        title="Create migration workspace"
-        subtitle="A new Git branch and worktree will be created. The original project stays read-only — every edit lands inside the workspace."
+        title="Create React 19 migration workspace"
+        subtitle="A new Git branch and worktree will be created for the React 19 migration. The original project stays read-only — every edit lands inside the workspace."
         meta={
           <HeaderMeta
             status={status}

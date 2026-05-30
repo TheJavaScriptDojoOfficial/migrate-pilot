@@ -7,18 +7,19 @@ import { PageHeader } from '@shared/ui/PageHeader';
 import { StepEyebrow } from '@shared/ui/StepEyebrow';
 
 /**
- * Step 8 — Migration Summary.
+ * Step 8 — React 19 Migration Summary.
  *
- * Final report after all steps are processed. Aggregates approved commits,
- * validation outcomes, and remaining manual follow-ups.
+ * Final report after all React 19 migration steps are processed.
+ * Aggregates approved commits, validation outcomes, and remaining
+ * manual follow-ups for the React 19 upgrade.
  */
 export function MigrationSummaryScreen(): JSX.Element {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={8} icon="check-circle" label="Summary" />}
-        title="Migration summary"
-        subtitle="A consolidated view of approved commits, rolled-back steps, and final validation."
+        title="React 19 migration summary"
+        subtitle="A consolidated view of approved commits, rolled-back steps, and final validation for the React 19 migration."
         actions={
           <>
             <Button variant="ghost" size="sm" disabled>
@@ -67,8 +68,8 @@ export function MigrationSummaryScreen(): JSX.Element {
 
           <EmptyState
             icon="check-circle"
-            title="No summary available"
-            description="The summary is generated automatically when a session reaches COMPLETED. You can re-open this screen any time from the workflow sidebar."
+            title="No React 19 migration summary available yet"
+            description="The React 19 migration summary is generated automatically when a session reaches COMPLETED. You can re-open this screen any time from the workflow sidebar."
           />
         </div>
       </div>

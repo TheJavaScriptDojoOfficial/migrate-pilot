@@ -194,7 +194,7 @@ export function DiffReviewScreen(): JSX.Element {
       <PageHeader
         eyebrow={<StepEyebrow number={7} icon="diff" label="Diff" />}
         title="Diff review"
-        subtitle="Review what changed in the workspace before moving on. Approval only records your decision — no commit, no validation, no package install runs here."
+        subtitle="Review what changed in the workspace for this React 19 migration step before moving on. Approval only records your decision — no commit, no validation, no package install runs here."
         meta={
           <HeaderMeta
             status={status}

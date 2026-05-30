@@ -65,8 +65,8 @@ export function ScannerScreen(): JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={2} icon="scan" label="Scan" />}
-        title="Scan project"
-        subtitle="Deterministic, read-only analysis of the selected project. Produces a readiness report you can review before approving any migration step."
+        title="React 19 compatibility scan"
+        subtitle="Deterministic, read-only analysis of the selected React 16/17/18 project. Produces a React 19 readiness report you can review before approving any migration step."
         meta={<HeaderMeta status={status} hasProject={hasProject} />}
         actions={
           <ScanActionBar
@@ -125,7 +125,7 @@ function NoProjectState({
       icon="folder"
       fullWidth
       title="No project selected yet"
-      description="Pick a local React project on Step 1 to enable the scanner. The scan never modifies the selected folder."
+      description="Pick a local React 16/17/18 project on Step 1 to enable the React 19 compatibility scan. The scan never modifies the selected folder."
       action={
         <Button
           variant="secondary"
@@ -179,10 +179,11 @@ function IdleState({
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Ready to scan</CardTitle>
+            <CardTitle>Ready to scan for React 19 readiness</CardTitle>
             <CardDescription>
               Project <span className="font-semibold text-ink">{projectName}</span> is
-              selected. Run the deterministic scanner to produce a readiness report.
+              selected. Run the deterministic React 19 compatibility scan to produce a
+              readiness report.
             </CardDescription>
           </div>
           <Badge tone="success" variant="soft" withDot>
@@ -194,17 +195,18 @@ function IdleState({
         </p>
         <div className="mt-4 flex flex-col items-start gap-3">
           <p className="text-xs leading-relaxed text-ink-muted">
-            The scan walks the project tree (skipping node_modules, dist, build,
-            coverage, .git, .next, out, target), reads package.json, and produces
-            heuristic indicators for class components, deprecated lifecycle
-            methods, and ReactDOM.render. No npm / git / build commands run.
+            The React 19 compatibility scan walks the project tree (skipping
+            node_modules, dist, build, coverage, .git, .next, out, target), reads
+            package.json, and produces heuristic indicators for class components,
+            deprecated lifecycle methods, and ReactDOM.render — all signals that
+            inform the React 19 migration plan. No npm / git / build commands run.
           </p>
           <Button
             size="md"
             leadingIcon={<Icon name="scan" />}
             onClick={onScan}
           >
-            Run scan
+            Run React 19 compatibility scan
           </Button>
         </div>
       </Card>
@@ -219,23 +221,23 @@ function ScanGuide(): JSX.Element {
       <Card tone="subtle">
         <CardHeader>
           <div>
-            <CardTitle>What the scanner detects</CardTitle>
+            <CardTitle>What the React 19 scan detects</CardTitle>
             <CardDescription>
               Deterministic signals — never AI-driven at this step.
             </CardDescription>
           </div>
         </CardHeader>
         <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
-          <Bullet>React / React DOM versions</Bullet>
+          <Bullet>React / React DOM versions (and source major)</Bullet>
           <Bullet>react-scripts version</Bullet>
           <Bullet>Package manager + lockfiles</Bullet>
-          <Bullet>node-sass vs sass usage</Bullet>
+          <Bullet>Deprecated / React-19-incompatible packages</Bullet>
           <Bullet>Routing / state / testing libs</Bullet>
           <Bullet>build / test / lint / typecheck scripts</Bullet>
           <Bullet>JS / JSX / TS / TSX file counts</Bullet>
           <Bullet>Deprecated lifecycle methods</Bullet>
           <Bullet>Class component indicators</Bullet>
-          <Bullet>ReactDOM.render usage</Bullet>
+          <Bullet>ReactDOM.render &amp; legacy context usage</Bullet>
         </ul>
       </Card>
       <Card tone="subtle">
@@ -243,7 +245,7 @@ function ScanGuide(): JSX.Element {
           <div>
             <CardTitle>What the scanner won't do</CardTitle>
             <CardDescription>
-              Run later in the workflow with explicit user approval.
+              Run later in the React 19 migration workflow with explicit user approval.
             </CardDescription>
           </div>
         </CardHeader>
@@ -252,7 +254,7 @@ function ScanGuide(): JSX.Element {
           <Lock>Run build / test / lint commands</Lock>
           <Lock>Run any AI / LLM call</Lock>
           <Lock>Modify package.json or any source file</Lock>
-          <Lock>Generate a migration plan</Lock>
+          <Lock>Generate the React 19 migration plan</Lock>
         </ul>
       </Card>
     </div>
@@ -269,7 +271,7 @@ function ScanningState({
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Scanning {projectName}</CardTitle>
+            <CardTitle>Running React 19 compatibility scan on {projectName}</CardTitle>
             <CardDescription>
               The deterministic walker is running. UI stays responsive — heavy IO is
               off the main thread.
@@ -307,7 +309,7 @@ function ScanningState({
       <EmptyState
         icon="scan"
         fullWidth
-        title="Scanning in progress"
+        title="React 19 compatibility scan in progress"
         description="This typically completes in a few seconds. Larger repositories are bounded by deterministic file-count and size limits to keep the UI responsive."
       />
     </>
@@ -324,7 +326,7 @@ function FailedState({
   return (
     <>
       <ErrorMessage
-        title="Scan failed"
+        title="React 19 compatibility scan failed"
         message={message}
       />
       <Card tone="subtle">
@@ -343,7 +345,7 @@ function FailedState({
           leadingIcon={<Icon name="scan" />}
           onClick={onRetry}
         >
-          Retry scan
+          Retry React 19 scan
         </Button>
       </Card>
     </>
@@ -418,9 +420,9 @@ const STATUS_TO_KIND: Record<ScanStatus, StatusKind> = {
 
 const STATUS_LABEL: Record<ScanStatus, string> = {
   idle: 'Idle',
-  scanning: 'Scanning',
-  completed: 'Scan complete',
-  failed: 'Scan failed',
+  scanning: 'Scanning for React 19 readiness',
+  completed: 'React 19 scan complete',
+  failed: 'React 19 scan failed',
 };
 
 interface PhaseRowProps {

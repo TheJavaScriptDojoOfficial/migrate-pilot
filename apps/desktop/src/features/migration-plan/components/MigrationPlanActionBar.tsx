@@ -70,21 +70,21 @@ export function MigrationPlanActionBar({
         loading={isGenerating}
         title={
           !canGenerate
-            ? (disabledGenerateReason ?? 'A completed scan report is required.')
+            ? (disabledGenerateReason ?? 'A completed React 19 compatibility scan is required.')
             : isGenerated
-              ? 'Re-generate the plan from the latest scan report'
+              ? 'Re-generate the React 19 migration plan from the latest scan report'
               : isApproved
-                ? 'Generate a new plan (will discard the approved plan)'
+                ? 'Generate a new React 19 migration plan (will discard the approved plan)'
                 : isFailed
-                  ? 'Retry plan generation'
-                  : 'Generate migration plan'
+                  ? 'Retry React 19 plan generation'
+                  : 'Generate the React 19 migration plan'
         }
       >
         {isGenerated || isApproved
-          ? 'Regenerate plan'
+          ? 'Regenerate React 19 plan'
           : isFailed
             ? 'Retry generation'
-            : 'Generate migration plan'}
+            : 'Generate React 19 migration plan'}
       </Button>
 
       {!isApproved ? (
@@ -96,11 +96,11 @@ export function MigrationPlanActionBar({
           disabled={!canApprove}
           title={
             canApprove
-              ? 'Approve the plan — the workspace step unlocks afterwards'
+              ? 'Approve the React 19 migration plan — the workspace step unlocks afterwards'
               : (disabledApproveReason ?? 'Generate a plan before approving.')
           }
         >
-          Approve plan
+          Approve React 19 plan
         </Button>
       ) : (
         <Button

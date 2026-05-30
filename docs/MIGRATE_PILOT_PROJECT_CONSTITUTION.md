@@ -1,11 +1,11 @@
-# Legacy Modernization Orchestrator — Project Constitution
+# Migrate Pilot — Project Constitution
 
 ## 1. Project Identity
 
-**Project Name:** Legacy Modernization Orchestrator  
+**Project Name:** Migrate Pilot  
 **Project Type:** Local-first AI-human orchestration tool  
-**Initial Target:** Legacy React applications  
-**V1 Focus:** React 16 / React 17 modernization to a safer, cleaner, more maintainable React + TypeScript codebase  
+**Initial Target:** React 16, React 17, and React 18 applications upgrading to React 19  
+**V1 Focus:** Safe, staged migration of React 16/17/18 projects to React 19, with human-reviewed diffs and validation gates at every step  
 **Primary User:** Developer, Tech Lead, Frontend Lead, Solution Architect, or modernization team member  
 **Execution Style:** AI executes step-by-step, human reviews and approves important decisions  
 
@@ -13,33 +13,38 @@
 
 ## 2. Product Goal
 
-The goal of this project is to reduce the manual effort, risk, and uncertainty involved in modernizing legacy React projects.
+The goal of Migrate Pilot V1 is to help engineers **migrate React 16, React 17, and React 18 projects to React 19** through a safe, step-by-step, workspace-isolated, human-reviewed process.
+
+- **Source:** React 16, React 17, React 18.
+- **Target:** React 19.
+- **Method:** staged migration, safe Git worktree workspace, human-reviewed diffs, validation gates.
 
 The application should help users:
 
-- Scan an existing legacy React project.
-- Detect outdated dependencies, deprecated libraries, risky patterns, and migration blockers.
-- Generate a clear modernization report.
-- Create a safe migration plan.
+- Scan an existing React 16/17/18 project for React 19 compatibility signals.
+- Detect outdated dependencies, deprecated APIs, JSX transform issues, and React 19 migration blockers.
+- Generate a clear React 19 readiness report.
+- Create a safe React 19 migration plan tailored to the detected source major (16, 17, or 18).
 - Create an isolated migration workspace.
-- Execute migration steps one by one.
+- Execute migration steps one at a time.
 - Review code changes after each step.
 - Validate each step through linting, type-checking, tests, and build checks.
 - Keep the human in control before risky changes are accepted.
 
-The product is not just a code converter. It is a controlled modernization workflow system.
+The product is not just a code converter or a single-codemod runner. It is a controlled, multi-phase React 19 migration workflow system.
 
 ---
 
 ## 3. Core Problem Being Solved
 
-Legacy frontend modernization is painful because teams usually face these problems:
+Upgrading a React project to React 19 is rarely a single command. Teams typically face these problems:
 
-- Old React projects contain deprecated dependencies.
-- Libraries such as `node-sass`, old routing libraries, class components, old lifecycle methods, outdated build tools, and old testing setups create upgrade friction.
-- Manual migration takes time and requires repeated investigation.
+- React 16 / 17 / 18 projects each have a different upgrade surface to React 19 (legacy roots, deprecated APIs, JSX transform, removed lifecycle methods, breaking type changes).
+- React 19 introduces removed/changed APIs (legacy context, string refs, `ReactDOM.render`, `findDOMNode`, propTypes/defaultProps on function components, etc.) that often surface as runtime regressions, not just compile errors.
+- Old React projects also carry deprecated dependencies (old routing libraries, class components with deprecated lifecycle methods, outdated build tools and test setups) that block the React 19 jump.
+- Manual migration takes time and requires repeated investigation across many files.
 - AI tools can generate changes quickly, but without structure they may create risky, inconsistent, or unreviewed code.
-- Developers need visibility into what changed, why it changed, and whether the project still works.
+- Developers need visibility into what changed, why it changed, and whether the project still works after each step.
 - Migration should happen safely in small steps, not as one large uncontrolled rewrite.
 
 This project solves the problem by combining:
@@ -76,35 +81,40 @@ The user must be able to:
 
 The system must avoid large uncontrolled rewrites.
 
-Migration should happen through small, reviewable steps such as:
+The React 19 migration should happen through small, reviewable steps such as:
 
-- Replace deprecated dependency.
-- Add TypeScript configuration.
-- Convert utility files.
-- Convert simple components.
-- Convert feature-level pages.
-- Update React Router usage.
-- Fix deprecated lifecycle methods.
-- Improve build/test setup.
+- Preflight checks (Node, package manager, Git, React version).
+- Tooling upgrade (build tool, TypeScript, ESLint, test runner).
+- React 18 bridge step for React 16/17 projects (move to `createRoot`, new JSX transform, prepare for concurrent rendering).
+- React 19 API-compatibility cleanup (deprecated lifecycles, string refs, legacy context, `ReactDOM.render`, `findDOMNode`, `propTypes`/`defaultProps` on function components).
+- JSX transform / `tsconfig` / `jsx` mode alignment for React 19.
+- React 19 upgrade (`react`, `react-dom`, types, peer deps).
+- Source modernization (functional components, hooks-based patterns, ref-as-prop, `use` hook where applicable).
+- Validation (lint, typecheck, tests, build).
+- Final React 19 migration review.
 
-### 4.3 Foundation-First Migration
+### 4.3 Foundation-First, React-Major-Aware Migration
 
-The recommended migration strategy is foundation-first, not screen-flow-first.
+The recommended migration strategy is foundation-first **and source-major aware**. The plan is not the same for a React 16 project, a React 17 project, and a React 18 project.
 
 Preferred order:
 
-1. Project scan and dependency analysis.
-2. Create migration workspace.
-3. Upgrade or replace deprecated foundations.
-4. Add TypeScript support where applicable.
-5. Convert low-risk files first.
-6. Convert reusable UI components.
-7. Convert pages and feature modules.
-8. Update routing/state patterns.
-9. Run validation.
-10. Generate final migration summary.
+1. Project scan, source React version detection, dependency analysis.
+2. Choose a migration track based on detected source major:
+   - `react-16-to-19`: React 16 → React 18 bridge → React 19.
+   - `react-17-to-19`: React 17 → React 18 bridge → React 19.
+   - `react-18-to-19`: React 18 → React 19 directly.
+3. Create migration workspace (Git worktree).
+4. Upgrade tooling and dependency foundations.
+5. Apply the React 18 bridge step where required.
+6. Run React 19 API-compatibility cleanup.
+7. Align JSX transform and React 19 type changes.
+8. Upgrade `react` / `react-dom` to React 19.
+9. Modernize source patterns (where small and safe).
+10. Run validation.
+11. Generate final React 19 migration summary.
 
-Screen-flow migration, such as starting from login and then moving page by page, should only be used later when the foundation is stable.
+Screen-flow migration, such as starting from login and then moving page by page, is **not** the V1 strategy. V1 is React-major-aware and phase-based.
 
 ### 4.4 Local-First Safety
 
@@ -135,14 +145,14 @@ V1 must stay focused and production-grade.
 
 ### 5.1 Supported Project Types in V1
 
-V1 supports:
+V1 supports React 16, React 17, and React 18 projects that need to migrate to React 19:
 
-- React 16 projects
-- React 17 projects
-- JavaScript-based React projects
-- React projects using old dependencies
-- React projects that may need TypeScript migration
-- Projects using deprecated packages such as `node-sass`
+- React 16 projects (legacy `ReactDOM.render`, class components, deprecated lifecycles).
+- React 17 projects (new JSX transform optional, no automatic `createRoot`).
+- React 18 projects (already on `createRoot`, concurrent rendering aware).
+- JavaScript-based React projects and TypeScript-based React projects.
+- Projects with deprecated APIs that React 19 removes or changes (string refs, legacy context, `findDOMNode`, `propTypes`/`defaultProps` on function components, etc.).
+- Projects that may also need build-tool or dependency modernization to unblock the React 19 upgrade.
 
 ### 5.2 Out of Scope for V1
 
@@ -266,24 +276,25 @@ Should show:
 - Readiness status
 - Blocking issues, if any
 
-### 9.2 Project Scan
+### 9.2 React 19 Compatibility Scan
 
 Purpose:
 
-- Analyze the project structure, dependencies, scripts, and risk areas.
+- Analyze the project for React 19 readiness — structure, dependencies, scripts, and React-19-specific risk areas.
 
 Should detect:
 
-- React version
-- Deprecated dependencies
-- `node-sass` usage
-- Old routing library usage
-- JavaScript/TypeScript status
+- Source React major (16, 17, or 18) and exact React + React DOM versions
+- Recommended React 19 migration track (`react-16-to-19`, `react-17-to-19`, or `react-18-to-19`)
+- Deprecated dependencies and React 19 peer-dep conflicts
+- React 19 API risks (`ReactDOM.render`, `findDOMNode`, string refs, legacy context, deprecated lifecycle methods, `propTypes` / `defaultProps` on function components)
+- JSX transform configuration and `tsconfig` `jsx` mode
+- Build tool and bundler version
+- TypeScript presence and React type version
+- Package manager and lock files
 - Test setup
-- Build tool
-- Package manager
 - Git branch status
-- Potential migration blockers
+- Potential React 19 migration blockers
 
 ### 9.3 Readiness Report
 
@@ -301,19 +312,20 @@ Should show:
 - Dependency concerns
 - Validation commands available
 
-### 9.4 Migration Plan
+### 9.4 React 19 Migration Plan
 
 Purpose:
 
-- Show the AI-generated step-by-step migration strategy.
+- Show the generated step-by-step React 19 migration plan, organized by phase and by the selected React migration track.
 - Let the user review, approve, edit, or reject the plan.
 
 Should show:
 
-- Migration strategy
+- Selected React 19 migration track (`react-16-to-19`, `react-17-to-19`, or `react-18-to-19`)
+- Recommended phases (preflight, tooling, react-18-bridge, api-compatibility, jsx-transform, react-19-upgrade, source-modernization, validation, final-review)
 - Total steps
 - Risk per step
-- Files/modules likely affected
+- Files / modules likely affected
 - Validation command per step
 - Human approval gate
 
@@ -332,21 +344,23 @@ Should show:
 - Safety explanation
 - Confirmation action
 
-### 9.6 Execution
+### 9.6 Execute React 19 Step
 
 Purpose:
 
-- Execute migration steps one by one.
+- Execute one approved React 19 migration step at a time inside the safe workspace.
 
 Should show:
 
-- Current step
+- Current React 19 step (phase + track context)
 - Step status
-- AI activity logs
+- AI / scripted activity logs
 - Files changed
 - Token/cost estimate if available
 - Validation result
 - Retry/fix option
+
+When no executable scripted step is available, the screen must make it clear that this is **not** a failure — some steps require future executors, codemods, validation, or AI-assisted implementation.
 
 ### 9.7 Diff Review
 
@@ -362,70 +376,74 @@ Should show:
 - AI explanation
 - Accept / Reject / Request Fix actions
 
-### 9.8 Final Summary
+### 9.8 React 19 Migration Summary
 
 Purpose:
 
-- Show what was migrated and what remains.
+- Show what was migrated towards React 19 and what remains.
 
 Should show:
 
-- Completed steps
+- Source React major (16/17/18) and migration track used
+- Final React + React DOM versions reached
+- Completed steps grouped by phase
 - Skipped steps
 - Failed steps
 - Commits created
 - Dependencies changed
 - Validation summary
-- Remaining recommendations
+- Remaining React 19 follow-ups (manual review, codemods to run later, etc.)
 
 ---
 
 ## 10. Migration Strategy
 
-The default migration strategy is foundation-first.
+The default migration strategy is **foundation-first, React-major-aware, phase-based** with React 19 as the explicit target.
 
-Recommended example sequence:
+Recommended phase sequence:
 
-1. Create safe migration workspace.
-2. Detect package manager and install baseline dependencies.
-3. Replace deprecated `node-sass` with `sass` if applicable.
-4. Add or prepare TypeScript configuration.
-5. Add type dependencies where needed.
-6. Convert simple utility files to TypeScript.
-7. Convert shared constants and helper files.
-8. Convert simple UI components to TSX.
-9. Convert reusable components such as Button, Card, Modal, Input.
-10. Convert low-risk pages.
-11. Convert feature modules.
-12. Fix deprecated lifecycle methods.
-13. Update routing patterns if needed.
-14. Improve lint/type/build validation.
-15. Run final validation.
-16. Generate final report.
+1. **preflight** — Node, package manager, Git, and React version checks.
+2. **tooling** — bring build tool, TypeScript, ESLint, and test runner to versions compatible with React 19.
+3. **react-18-bridge** — for React 16 / 17 source projects: move to `createRoot`, adopt the new JSX transform, and prepare for concurrent rendering. Skipped for React 18 sources.
+4. **api-compatibility** — replace or remove APIs that React 19 removes/changes: `ReactDOM.render`, `findDOMNode`, string refs, legacy context, deprecated lifecycle methods, `propTypes` / `defaultProps` on function components.
+5. **jsx-transform** — align `tsconfig.json` / `jsx` configuration and any `@babel/preset-react` / Vite settings with React 19 expectations.
+6. **react-19-upgrade** — upgrade `react`, `react-dom`, and `@types/react*` to React 19, plus pinned peer dependencies.
+7. **source-modernization** — small, safe modernization (functional components, hooks, ref-as-prop, `use` hook where applicable).
+8. **validation** — run lint, typecheck, tests, and build inside the workspace.
+9. **final-review** — generate the React 19 migration summary.
 
-The system should not blindly follow this list. It should generate a project-specific plan based on scan results.
+The system must not blindly follow this list. It generates a project-specific React 19 plan based on scan results and the chosen migration track (`react-16-to-19`, `react-17-to-19`, or `react-18-to-19`).
 
 ---
 
-## 11. Deprecated Dependency Strategy
+## 11. Deprecated API and Dependency Strategy
 
-The migration must handle deprecated libraries carefully.
+The migration must handle React-19-incompatible APIs and deprecated libraries carefully.
 
-For example, if a React 17 project uses `node-sass`, the system should recommend replacing it with the modern `sass` package.
+Examples (representative, not exhaustive):
 
-Expected behavior:
+- `ReactDOM.render` → `createRoot` (React 18 bridge).
+- `ReactDOM.hydrate` → `hydrateRoot`.
+- `findDOMNode` → refs.
+- String refs → callback refs or `useRef`.
+- Deprecated lifecycle methods (`componentWillMount`, `componentWillReceiveProps`, `componentWillUpdate`) → `UNSAFE_*` rename or refactor.
+- `propTypes` / `defaultProps` on function components → TypeScript types / default parameters.
+- Legacy context → modern `React.createContext`.
+- Build-tool / Node version bumps where React 19 requires it.
 
-- Detect deprecated dependency.
-- Explain why it is a risk.
-- Identify compatible replacement.
-- Plan replacement as a separate migration step.
-- Update package file.
-- Validate build after replacement.
-- Keep style behavior unchanged as much as possible.
+Expected behavior for each:
+
+- Detect the deprecated API or dependency.
+- Explain why it is a React 19 risk.
+- Identify the compatible replacement.
+- Plan the replacement as a separate React 19 migration step (with explicit phase and track context).
+- Update the relevant files (package.json or source) only inside the workspace.
+- Validate build, lint, and types after each step.
+- Preserve existing runtime behavior unless the React 19 migration plan says otherwise.
 
 Important rule:
 
-Dependency replacement must not be bundled with large unrelated code changes.
+A single migration step must not bundle multiple unrelated React 19 changes. Each step targets one concern (one phase, one cluster of files, one risk class).
 
 ---
 
@@ -472,18 +490,18 @@ If Git worktree is not possible:
 
 ### 12.4 Branch Naming
 
-Use predictable branch names.
+Use predictable branch names that make the React 19 intent obvious.
 
 Example:
 
 ```text
-migration/react-modernization-{timestamp}
+migration/react-19-upgrade-{timestamp}
 ```
 
 or
 
 ```text
-migration/{project-name}-react-upgrade
+migration/{project-name}-react-19
 ```
 
 ---
@@ -531,29 +549,29 @@ AI must not:
 
 ---
 
-## 14. Scanner Strategy
+## 14. React 19 Compatibility Scanner Strategy
 
-The scanner must provide deterministic project understanding before AI execution starts.
+The scanner must provide deterministic project understanding before AI execution starts. It is the source of truth that selects the React 19 migration track and seeds the plan.
 
 The scanner should inspect:
 
 - `package.json`
 - Lock files
-- React version
+- React + React DOM versions (and derived source major: 16 / 17 / 18)
+- React 19 peer-dependency conflicts
 - Build tool
 - Package manager
 - Scripts
-- TypeScript presence
-- Sass/SCSS setup
-- Deprecated packages
+- TypeScript presence and `tsconfig` `jsx` mode
+- React 19 API risks (`ReactDOM.render`, `findDOMNode`, string refs, legacy context, deprecated lifecycle methods, `propTypes` / `defaultProps` on function components)
 - Routing library
 - State management library
 - Test setup
 - Folder structure
 - Git status
-- Existing lint/type/build commands
+- Existing lint / type / build commands
 
-Scanner output should be structured and reusable by AI agents.
+Scanner output should be structured and reusable by the planner and by AI agents. It includes a `React19MigrationContext` so the planner knows the source major, target major, recommended track, and recommended phases.
 
 Suggested output file:
 
@@ -695,14 +713,14 @@ This gives:
 Example commit messages:
 
 ```text
-chore: replace node-sass with sass
-chore: add TypeScript configuration
-refactor: convert utility helpers to TypeScript
-refactor: convert shared Button component to TSX
-fix: update deprecated React lifecycle usage
+chore(react-19): adopt createRoot in src/index.tsx (react-18 bridge)
+chore(react-19): enable new JSX transform
+refactor(react-19): replace findDOMNode with refs in Modal
+fix(react-19): rename deprecated componentWill* lifecycle methods
+chore(react-19): upgrade react and react-dom to 19.x
 ```
 
-Commit messages should be generated based on the actual step and changed files.
+Commit messages should be generated based on the actual step, its React 19 phase, and the changed files.
 
 ---
 
@@ -710,37 +728,42 @@ Commit messages should be generated based on the actual step and changed files.
 
 The app should generate reports that are useful to both developers and leads.
 
-### 19.1 Scan Report
+### 19.1 React 19 Compatibility Scan Report
 
 Includes:
 
 - Project metadata
-- Dependencies
-- Deprecated packages
+- Detected source React major (16 / 17 / 18) and exact versions
+- Recommended React 19 migration track
+- Dependencies and React 19 peer-dep conflicts
+- React-19-incompatible API usage
 - Risk areas
-- Migration readiness
-- Suggested strategy
+- React 19 migration readiness
+- Suggested strategy and recommended phases
 
-### 19.2 Migration Plan Report
+### 19.2 React 19 Migration Plan Report
 
 Includes:
 
-- Step-by-step plan
+- Selected React 19 migration track
+- Phase-by-phase, step-by-step plan
 - Risk rating
-- Expected files/modules affected
-- Validation method
+- Expected files / modules affected
+- Validation method per step
 - Human approval points
 
-### 19.3 Final Summary Report
+### 19.3 React 19 Migration Summary Report
 
 Includes:
 
-- What changed
+- Source React major and starting versions
+- Final React + React DOM versions reached
+- What changed, grouped by phase
 - What passed
 - What failed
 - What was skipped
-- What remains
-- Suggested next phase
+- What remains (manual follow-ups, codemods to run later)
+- Suggested next phase or follow-up work
 
 ---
 
@@ -841,19 +864,18 @@ Any AI agent working on this project must follow these rules:
 
 V1 can be considered complete when the app can:
 
-- Select a local React 16/17 project.
-- Scan the project.
-- Detect major modernization risks.
-- Detect deprecated dependencies such as `node-sass`.
-- Generate a readiness report.
-- Generate a migration plan.
+- Select a local React 16, React 17, or React 18 project.
+- Run the React 19 compatibility scan and detect the source React major.
+- Detect React 19 migration blockers (incompatible APIs, deprecated lifecycle methods, peer-dep conflicts).
+- Generate a React 19 readiness report.
+- Generate a React 19 migration plan with the correct track (`react-16-to-19`, `react-17-to-19`, or `react-18-to-19`) and phases.
 - Create a safe migration workspace.
-- Execute at least one migration step through AI or scripted automation.
+- Execute at least one React 19 migration step through AI or scripted automation.
 - Show changed files and diff.
 - Allow user approval or rejection.
 - Run validation command.
 - Track migration session state.
-- Generate final summary report.
+- Generate the React 19 migration summary.
 
 ---
 
@@ -863,12 +885,12 @@ V1 should openly communicate its limitations.
 
 Expected limitations:
 
-- It may not fully migrate every project automatically.
+- It may not fully migrate every project to React 19 automatically.
 - Some code changes may require manual review.
 - Some validations may not be available in older projects.
 - Complex dependency upgrades may need manual decisions.
 - Visual regression testing may not be available initially.
-- It focuses only on React legacy modernization.
+- It focuses only on React 16/17/18 → React 19 migration. Other source frameworks (Angular, Vue, etc.) are out of scope.
 - It is local-first and not designed for multi-user enterprise collaboration yet.
 
 ---
@@ -988,15 +1010,15 @@ Implement safe workspace creation using:
 - Git worktree
 - Fallback copy mode if needed
 
-### Step 9: Implement One End-to-End Migration Step
+### Step 9: Implement One End-to-End React 19 Migration Step
 
-Start with a simple but valuable step:
+Start with a simple but valuable React 19 step. For example:
 
 ```text
-Replace node-sass with sass
+React 18 bridge: replace ReactDOM.render with createRoot in the application entry file.
 ```
 
-This is a good first real migration step because it is common, valuable, and bounded.
+This is a good first real React 19 migration step because it is common (every React 16/17 project needs it), valuable (it unblocks the rest of the React 19 migration), and bounded (it touches a small, well-known set of files).
 
 ### Step 10: Implement Diff Review and Validation
 
@@ -1015,12 +1037,12 @@ After the first step executes:
 The first meaningful milestone should be:
 
 ```text
-A user can select a React 17 project using node-sass, scan it, get a readiness report, create a migration workspace, replace node-sass with sass, review the diff, run build validation, and generate a summary.
+A user can select a React 16, React 17, or React 18 project, run the React 19 compatibility scan, get a readiness report, generate and approve a React 19 migration plan, create a safe workspace, execute one bounded React 19 step (for example: replace ReactDOM.render with createRoot), review the diff, run build validation, and generate a React 19 migration summary.
 ```
 
-This milestone proves the full product loop.
+This milestone proves the full product loop end-to-end against the real React 19 target.
 
-It is better than building many screens without one working end-to-end workflow.
+It is better than building many screens without one working end-to-end React 19 migration workflow.
 
 ---
 
@@ -1030,8 +1052,9 @@ Any AI assistant, Cursor agent, or coding agent working on this project should r
 
 Before making changes, the AI should understand:
 
-- This is a local-first legacy React modernization orchestrator.
-- V1 is focused only on React 16/17 projects.
+- This is a local-first React 19 migration orchestrator.
+- V1 is focused on migrating React 16, React 17, and React 18 projects to React 19.
+- The migration is staged, React-major-aware, and phase-based.
 - The workflow must be safe, step-based, reviewable, and Git-backed.
 - The original project must not be modified directly.
 - Human approval is central to the product.
@@ -1047,5 +1070,5 @@ When uncertain, the AI should choose the safer, smaller, more reviewable impleme
 
 The north star of this project is:
 
-> Help development teams modernize legacy React applications safely, one validated step at a time, with AI doing the heavy lifting and humans staying in control.
+> Help development teams safely migrate React 16, React 17, and React 18 projects to React 19, one validated step at a time, with AI doing the heavy lifting and humans staying in control.
 

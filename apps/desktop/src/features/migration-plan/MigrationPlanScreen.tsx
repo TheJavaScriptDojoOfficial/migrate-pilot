@@ -93,8 +93,8 @@ export function MigrationPlanScreen(): JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={4} icon="plan" label="Plan" />}
-        title="Migration plan"
-        subtitle="Deterministic, rule-based plan generated from the scan report. Review the steps below, then approve to unlock workspace creation."
+        title="React 19 migration plan"
+        subtitle="Deterministic, rule-based React 19 migration plan generated from the compatibility scan. Review the steps below, then approve to unlock workspace creation."
         meta={
           <HeaderMeta
             planStatus={planStatus}
@@ -189,11 +189,12 @@ function IdleState({ projectName, onGenerate }: IdleStateProps): JSX.Element {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Ready to generate plan</CardTitle>
+            <CardTitle>Ready to generate the React 19 migration plan</CardTitle>
             <CardDescription>
-              Scan complete for <span className="font-semibold text-ink">{projectName}</span>.
-              Generating the plan reads the scan report and emits a deterministic,
-              rule-based migration plan tailored to this project.
+              React 19 compatibility scan complete for{' '}
+              <span className="font-semibold text-ink">{projectName}</span>. Generating
+              the plan reads the scan report and emits a deterministic, rule-based
+              React 19 migration plan tailored to this project.
             </CardDescription>
           </div>
           <Badge tone="success" variant="soft" withDot>
@@ -203,7 +204,7 @@ function IdleState({ projectName, onGenerate }: IdleStateProps): JSX.Element {
 
         <CardSection>
           <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
-            <Bullet>Foundation-first strategy.</Bullet>
+            <Bullet>Foundation-first, React-major-aware strategy.</Bullet>
             <Bullet>Each step has explicit risk, category, and rationale.</Bullet>
             <Bullet>Validation commands come from your package.json scripts.</Bullet>
             <Bullet>Approval is required before workspace creation.</Bullet>
@@ -212,16 +213,16 @@ function IdleState({ projectName, onGenerate }: IdleStateProps): JSX.Element {
 
         <div className="mt-4 flex flex-col items-start gap-3">
           <p className="text-xs leading-relaxed text-ink-muted">
-            Plan generation is local and deterministic. No AI provider is contacted,
-            no file is modified, and no command is executed. This screen is the
-            human checkpoint between analysis and any project mutation.
+            React 19 plan generation is local and deterministic. No AI provider is
+            contacted, no file is modified, and no command is executed. This screen
+            is the human checkpoint between analysis and any project mutation.
           </p>
           <Button
             size="md"
             leadingIcon={<Icon name="plan" />}
             onClick={onGenerate}
           >
-            Generate migration plan
+            Generate React 19 migration plan
           </Button>
         </div>
       </Card>
@@ -237,7 +238,7 @@ function PlanGuide(): JSX.Element {
       <Card tone="subtle">
         <CardHeader>
           <div>
-            <CardTitle>What the planner produces</CardTitle>
+            <CardTitle>What the React 19 planner produces</CardTitle>
             <CardDescription>
               Deterministic rules — no AI involved at this step.
             </CardDescription>
@@ -245,13 +246,13 @@ function PlanGuide(): JSX.Element {
         </CardHeader>
         <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
           <Bullet>Workspace setup step (always first).</Bullet>
-          <Bullet>node-sass replacement (only if detected).</Bullet>
-          <Bullet>TypeScript foundation or verification.</Bullet>
-          <Bullet>Utility / component / page conversion steps.</Bullet>
-          <Bullet>Deprecated lifecycle fix (high-risk gate).</Bullet>
-          <Bullet>ReactDOM.render assessment.</Bullet>
-          <Bullet>Routing & state-management reviews.</Bullet>
-          <Bullet>Final validation + summary report.</Bullet>
+          <Bullet>Preflight + tooling phase steps.</Bullet>
+          <Bullet>React 18 bridge (React 16/17 sources only).</Bullet>
+          <Bullet>React 19 API-compatibility fixes.</Bullet>
+          <Bullet>JSX transform / TypeScript alignment.</Bullet>
+          <Bullet>React 19 upgrade (react, react-dom, types).</Bullet>
+          <Bullet>Source modernization (where safe).</Bullet>
+          <Bullet>Final validation + React 19 summary report.</Bullet>
         </ul>
       </Card>
       <Card tone="subtle">
@@ -259,7 +260,7 @@ function PlanGuide(): JSX.Element {
           <div>
             <CardTitle>What this step won't do</CardTitle>
             <CardDescription>
-              Out of scope for Milestone 4 — planning only.
+              Out of scope for Milestone 4 — React 19 planning only.
             </CardDescription>
           </div>
         </CardHeader>
@@ -281,10 +282,11 @@ function GeneratingState(): JSX.Element {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Generating migration plan</CardTitle>
+            <CardTitle>Generating React 19 migration plan</CardTitle>
             <CardDescription>
-              Running the deterministic rule engine over the scan report. This step
-              never contacts an AI provider and never touches the filesystem.
+              Running the deterministic rule engine over the React 19 compatibility
+              scan. This step never contacts an AI provider and never touches the
+              filesystem.
             </CardDescription>
           </div>
           <StatusIndicator status="running" label="Generating" variant="chip" />
@@ -319,8 +321,8 @@ function GeneratingState(): JSX.Element {
       <EmptyState
         icon="plan"
         fullWidth
-        title="Generating plan"
-        description="This typically completes in well under a second. The generator is pure JavaScript over the in-memory scan report."
+        title="Generating React 19 migration plan"
+        description="This typically completes in well under a second. The generator is pure JavaScript over the in-memory React 19 compatibility scan report."
       />
     </>
   );
@@ -335,7 +337,7 @@ function FailedState({
 }): JSX.Element {
   return (
     <>
-      <ErrorMessage title="Plan generation failed" message={message} />
+      <ErrorMessage title="React 19 plan generation failed" message={message} />
       <Card tone="subtle">
         <CardHeader>
           <div>
@@ -347,7 +349,7 @@ function FailedState({
           </div>
         </CardHeader>
         <Button size="md" leadingIcon={<Icon name="plan" />} onClick={onRetry}>
-          Retry generation
+          Retry React 19 plan generation
         </Button>
       </Card>
     </>
@@ -381,7 +383,7 @@ function ApprovedBanner(): JSX.Element {
         <Icon name="check" className="h-3 w-3" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-success">Plan approved</p>
+        <p className="text-xs font-semibold text-success">React 19 migration plan approved</p>
         <p className="mt-1 text-xs leading-relaxed text-ink-muted">
           Editing actions are locked. The workspace step is now unlocked in the
           workflow sidebar — continue when you are ready. The original project

@@ -17,7 +17,8 @@ import type {
 import { ExecutionStepCard } from './ExecutionStepCard';
 
 /**
- * ExecutionPlanStepList — vertical list of plan steps with selection.
+ * ExecutionPlanStepList — vertical list of React 19 migration plan steps
+ * with selection.
  *
  * Pure projection of `steps` + per-step capability/status state. Approval
  * and execution actions live in the action bar; this component is
@@ -25,8 +26,8 @@ import { ExecutionStepCard } from './ExecutionStepCard';
  *
  * The header copy is generic: it lists what executors are currently
  * supported by the registry rather than naming a single migration
- * scenario. When the plan has zero scripted-executable steps, the body
- * copy explains that this is *expected*, not a bug.
+ * scenario. When the React 19 plan has zero scripted-executable steps,
+ * the body copy explains that this is *expected*, not a failure mode.
  */
 export interface ExecutionPlanStepListProps {
   readonly steps: readonly MigrationStep[];
@@ -59,7 +60,7 @@ export function ExecutionPlanStepList({
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Migration steps</CardTitle>
+          <CardTitle>React 19 migration steps</CardTitle>
           <CardDescription>
             Pick a step to inspect its executor availability. Scripted
             execution is available only for steps backed by a registered
@@ -79,7 +80,7 @@ export function ExecutionPlanStepList({
             </Badge>
           ) : (
             <Badge tone="neutral" variant="outline">
-              No scripted steps in this plan
+              No scripted steps in this plan yet
             </Badge>
           )}
         </div>
@@ -87,15 +88,16 @@ export function ExecutionPlanStepList({
 
       {steps.length === 0 ? (
         <p className="text-xs text-ink-muted">
-          The plan contains no steps. Re-generate the plan and try again.
+          The React 19 migration plan contains no steps. Re-generate the plan and
+          try again.
         </p>
       ) : executableCount === 0 ? (
         <div className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 p-3">
           <p className="text-xs leading-relaxed text-ink-muted">
-            No executable scripted steps are available for this plan yet.
-            This does not mean the plan is invalid — it means these steps
-            require manual work, AI execution, or future executors. The
-            list still works for review and selection.
+            No executable scripted steps are available yet for this React 19
+            plan. This does not mean the plan is invalid. Some steps may require
+            future executors, codemods, validation, or AI-assisted
+            implementation. The list still works for review and selection.
           </p>
         </div>
       ) : null}

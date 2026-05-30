@@ -4,9 +4,9 @@ import { Icon } from '@shared/ui/Icon';
 import type { ScanStatus } from '../types/scanner.types';
 
 /**
- * ScanActionBar — top-of-screen actions: run / re-run scan and continue
- * to the migration plan. Kept presentational; the parent screen owns the
- * click handlers.
+ * ScanActionBar — top-of-screen actions: run / re-run the React 19
+ * compatibility scan and continue to the React 19 migration plan. Kept
+ * presentational; the parent screen owns the click handlers.
  */
 export interface ScanActionBarProps {
   readonly status: ScanStatus;
@@ -52,13 +52,17 @@ export function ScanActionBar({
         loading={isScanning}
         title={
           !canScan
-            ? (disabledReason ?? 'Select a valid React project before scanning.')
+            ? (disabledReason ?? 'Select a valid React 16/17/18 project before scanning.')
             : isCompleted
-              ? 'Re-run the scan'
-              : 'Run scan'
+              ? 'Re-run the React 19 compatibility scan'
+              : 'Run the React 19 compatibility scan'
         }
       >
-        {isCompleted ? 'Re-run scan' : isFailed ? 'Retry scan' : 'Run scan'}
+        {isCompleted
+          ? 'Re-run React 19 scan'
+          : isFailed
+            ? 'Retry React 19 scan'
+            : 'Run React 19 scan'}
       </Button>
       <Button
         variant="primary"
@@ -68,8 +72,8 @@ export function ScanActionBar({
         onClick={onContinue}
         title={
           canContinue
-            ? 'Continue to the migration plan step'
-            : 'A successful scan is required before continuing.'
+            ? 'Continue to the React 19 migration plan step'
+            : 'A successful React 19 compatibility scan is required before continuing.'
         }
       >
         Continue to Migration Plan

@@ -20,8 +20,8 @@ export function MigrationPlanEmptyState({
     <EmptyState
       icon="plan"
       fullWidth
-      title="Complete the project scan first"
-      description="The migration plan is generated deterministically from the scan report. Run the scanner on Step 2 — once it completes, you can generate the plan here."
+      title="Complete the React 19 compatibility scan first"
+      description="The React 19 migration plan is generated deterministically from the React 19 compatibility scan report. Run the scanner on Step 2 — once it completes, you can generate the plan here."
       action={
         <Button
           variant="secondary"

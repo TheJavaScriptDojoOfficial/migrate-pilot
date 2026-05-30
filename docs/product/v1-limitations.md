@@ -16,12 +16,13 @@ Migrate Pilot V1 is deliberately narrow. Setting expectations is part of the pro
 
 ## Behavioural limitations
 
-- V1 does not guarantee fully automatic migration.
-- V1 does not guarantee 100% behavioural parity with the original code.
+- V1 does not guarantee fully automatic React 19 migration.
+- V1 does not guarantee 100% behavioural parity with the original code after the React 19 upgrade.
 - V1 does not replace human code review. Every step requires explicit approval.
 - V1 does not understand every custom architecture perfectly.
 - V1 does not solve missing test coverage. If the project has weak tests, validation will only catch a fraction of regressions.
 - V1 does not guarantee zero AI mistakes - diffs are always reviewable.
+- V1 does not target React versions older than 16 or other target majors than React 19.
 
 ## Operational limitations
 
@@ -32,4 +33,4 @@ Migrate Pilot V1 is deliberately narrow. Setting expectations is part of the pro
 
 ## The honest summary
 
-> Migrate Pilot reduces migration effort. It does not remove engineering judgment.
+> Migrate Pilot reduces the effort of moving React 16/17/18 projects to React 19. It does not remove engineering judgment.

@@ -11,7 +11,7 @@ The project now has:
 - Base folder structure
 - Initial product direction
 - Local-first scope
-- React legacy modernization as the V1 focus
+- React 16 / React 17 / React 18 → React 19 migration as the V1 focus
 
 The next phase is controlled implementation.
 
@@ -19,16 +19,20 @@ The next phase is controlled implementation.
 
 ## 2. V1 Development Goal
 
-Build a local-first migration orchestration application that helps users migrate old React projects step by step with AI assistance and human review.
+Build a local-first migration orchestration application that helps users **migrate React 16, React 17, and React 18 projects to React 19** step by step with AI assistance and human review.
+
+- **Source:** React 16, React 17, React 18.
+- **Target:** React 19.
+- **Method:** staged migration, safe Git worktree workspace, human-reviewed diffs, validation gates.
 
 V1 should support:
 
-- Selecting a local React project
-- Scanning the project
-- Detecting migration readiness
+- Selecting a local React 16/17/18 project
+- Running the React 19 compatibility scan
+- Detecting React 19 migration readiness and source major
 - Creating a safe migration workspace
-- Generating a migration plan
-- Executing migration steps one by one
+- Generating a React 19 migration plan (track + phases)
+- Executing React 19 migration steps one at a time
 - Reviewing diffs before accepting changes
 - Running validation commands
 - Maintaining migration session state
@@ -69,20 +73,19 @@ The user should be able to:
 
 ### 3.3 Small Step Migration
 
-Migration should happen in small controlled steps.
+The React 19 migration should happen in small controlled steps, organized by phase.
 
-Example:
+Example (representative — actual plan depends on detected source major and scan output):
 
-1. Replace deprecated packages
-2. Add TypeScript config
-3. Convert simple utilities
-4. Convert simple components
-5. Convert shared components
-6. Convert pages
-7. Fix routing
-8. Fix deprecated React APIs
-9. Run validation
-10. Generate final summary
+1. Preflight (Node, package manager, Git, React version)
+2. Tooling upgrade (build tool, TypeScript, ESLint, test runner)
+3. React 18 bridge (for React 16/17 sources: `createRoot`, new JSX transform)
+4. React 19 API-compatibility cleanup (`ReactDOM.render`, `findDOMNode`, deprecated lifecycles, string refs, legacy context)
+5. JSX transform / `tsconfig` alignment for React 19
+6. Upgrade `react`, `react-dom`, and types to React 19
+7. Source modernization (small, safe patterns)
+8. Run validation (lint, typecheck, tests, build)
+9. Generate React 19 migration summary
 
 ### 3.4 Local-First
 
@@ -148,7 +151,7 @@ Create the stable app shell and layout foundation.
 
 ### Goal
 
-Allow the user to select a local React project safely.
+Allow the user to select a local React 16, React 17, or React 18 project safely.
 
 ### Features
 
@@ -156,7 +159,7 @@ Allow the user to select a local React project safely.
 - Show selected path
 - Detect package.json
 - Detect git repository
-- Detect React dependency
+- Detect React dependency and React major (16 / 17 / 18)
 - Detect package manager
 - Show basic project metadata
 
@@ -165,7 +168,7 @@ Allow the user to select a local React project safely.
 The app should detect:
 
 - Project name
-- React version
+- React version (and derived major: 16, 17, or 18)
 - React DOM version
 - Node version if available
 - Package manager
@@ -184,26 +187,27 @@ The app should detect:
 
 ---
 
-## Phase 3: Readiness Scanner
+## Phase 3: React 19 Compatibility Scanner
 
 ### Goal
 
-Scan the selected project and identify migration readiness.
+Scan the selected project and identify **React 19 migration readiness**.
 
 ### Scanner Categories
 
 The scanner should detect:
 
-- React version
-- Deprecated dependencies
-- node-sass usage
-- react-scripts version
-- webpack/custom config
-- Babel config
-- TypeScript presence
-- JavaScript/JSX file count
+- React + React DOM versions (and derived source major: 16 / 17 / 18)
+- Recommended React 19 migration track (`react-16-to-19`, `react-17-to-19`, or `react-18-to-19`)
+- Deprecated / React-19-incompatible dependencies
+- `react-scripts` version
+- Webpack / Vite / custom build config
+- Babel config and JSX transform mode
+- TypeScript presence and `tsconfig` `jsx` mode
+- JavaScript / JSX file count
 - Class components
-- Deprecated lifecycle methods
+- Deprecated lifecycle methods (`componentWillMount`, `componentWillReceiveProps`, `componentWillUpdate`)
+- React 19 API risks (`ReactDOM.render`, `findDOMNode`, string refs, legacy context, `propTypes` / `defaultProps` on function components)
 - React Router version
 - Redux usage
 - Testing setup
@@ -230,37 +234,34 @@ type ScanReport = {
 ### Acceptance Criteria
 
 * Scanner runs without modifying files
-* Scanner produces clear report
+* Scanner produces a clear React 19 readiness report
 * Risks are categorized as Low, Medium, High
-* Deprecated libraries are highlighted
-* node-sass replacement recommendation is shown when applicable
+* React-19-incompatible APIs and dependencies are highlighted
+* Recommended React 19 migration track (`react-16-to-19`, `react-17-to-19`, `react-18-to-19`) is computed from the detected source major
 
 ---
 
-## Phase 4: Migration Plan Generator
+## Phase 4: React 19 Migration Plan Generator
 
 ### Goal
 
-Generate a step-by-step migration plan from the scan report.
+Generate a step-by-step **React 19 migration plan** from the scan report and chosen migration track.
 
 ### Plan Strategy
 
-The migration plan should follow a foundation-first approach.
+The React 19 migration plan is **foundation-first, React-major-aware, and phase-based**.
 
-Recommended order:
+Recommended phase order:
 
-1. Workspace safety setup
-2. Dependency modernization
-3. Build tooling compatibility
-4. TypeScript preparation
-5. Utility conversion
-6. Shared component conversion
-7. Page/module conversion
-8. Router modernization
-9. State management cleanup
-10. Deprecated API fixes
-11. Validation
-12. Final report
+1. **preflight** — Node, package manager, Git, React version
+2. **tooling** — build tool, TypeScript, ESLint, test runner
+3. **react-18-bridge** — only for React 16 / 17 sources (`createRoot`, new JSX transform)
+4. **api-compatibility** — `ReactDOM.render`, `findDOMNode`, string refs, legacy context, deprecated lifecycles, `propTypes` / `defaultProps`
+5. **jsx-transform** — `tsconfig` / Babel / Vite alignment for React 19
+6. **react-19-upgrade** — upgrade `react`, `react-dom`, and types to React 19
+7. **source-modernization** — small, safe modernization (functional components, hooks, ref-as-prop)
+8. **validation** — lint, typecheck, tests, build
+9. **final-review** — generate React 19 migration summary
 
 ### Plan Step Structure
 
@@ -279,7 +280,8 @@ type MigrationStep = {
 
 ### Acceptance Criteria
 
-* Plan is generated from scan report
+* React 19 plan is generated from scan report
+* Plan reflects the selected React 19 migration track and phases
 * User can review the plan
 * User can approve the plan
 * User can see step risk
@@ -491,24 +493,25 @@ Allow basic configuration for local execution.
 
 ---
 
-## Phase 11: Final Summary Report
+## Phase 11: React 19 Migration Summary Report
 
 ### Goal
 
-Generate a clear migration summary at the end.
+Generate a clear **React 19 migration summary** at the end.
 
 ### Summary Should Include
 
 * Project migrated
-* Original React version
-* Target modernization changes
-* Steps completed
+* Original React major (16 / 17 / 18) and exact starting versions
+* Target: React 19 (final React + React DOM versions reached)
+* Migration track used (`react-16-to-19`, `react-17-to-19`, `react-18-to-19`)
+* Steps completed (grouped by React 19 phase)
 * Steps skipped
 * Failed steps
 * Files changed
 * Dependencies updated
 * Validation results
-* Remaining manual actions
+* Remaining React 19 follow-ups (manual review, codemods, etc.)
 * Final recommendation
 
 ### Acceptance Criteria
@@ -538,16 +541,16 @@ Build in this exact order:
 * Project metadata detection
 * Basic validation
 
-## Milestone 3: Scanner
+## Milestone 3: React 19 Compatibility Scanner
 
 * package.json scanner
-* dependency scanner
-* source file scanner
-* readiness report UI
+* dependency scanner (including React 19 peer-dep conflicts)
+* source file scanner (deprecated lifecycles, `ReactDOM.render`, `findDOMNode`, string refs, legacy context)
+* React 19 readiness report UI (with detected source major + recommended track)
 
-## Milestone 4: Migration Plan
+## Milestone 4: React 19 Migration Plan
 
-* Rule-based migration plan generator
+* Rule-based React 19 migration plan generator (track + phases)
 * Plan review UI
 * Approve plan action
 
@@ -784,26 +787,24 @@ Output expected:
 
 V1 is done when:
 
-- User can select an old React project
-- App can scan the project
-- App can generate a migration plan
+- User can select a React 16, React 17, or React 18 project
+- App can run the React 19 compatibility scan
+- App can generate a React 19 migration plan with the correct track and phases
 - App can create a safe workspace
-- App can execute migration steps one by one
+- App can execute React 19 migration steps one by one
 - User can review diffs
-- User can approve/reject/retry steps
+- User can approve / reject / retry steps
 - App can run validation
-- App can generate final summary
+- App can generate the React 19 migration summary
 - Original project remains safe throughout the process
 
 ---
 
 # 11. Final Direction
 
-The project should now move from architecture thinking to milestone-based implementation.
+The project should now move from architecture thinking to milestone-based implementation against the React 19 migration target.
 
-The immediate next action is:
+The immediate next action is the **Rework R1 — Product Rebaseline to React 19 Migration Pilot** milestone (this document), followed by Scanner V2 / Planner V2 / Executor V2 milestones.
 
-> Implement Milestone 1: Static UI Foundation.
-
-Do not start scanner, AI execution, or git automation before the workflow UI foundation is stable.
+Do not introduce new executors, AI execution, or workspace behavior changes inside R1 — R1 is documentation, terminology, and domain-type rebaseline only.
 ```

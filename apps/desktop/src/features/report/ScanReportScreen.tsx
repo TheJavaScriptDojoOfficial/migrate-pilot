@@ -39,8 +39,8 @@ export function ScanReportScreen(): JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={3} icon="report" label="Report" />}
-        title="Readiness report"
-        subtitle="Review the deterministic scan artifact. Approve to continue to the migration plan."
+        title="React 19 readiness report"
+        subtitle="Review the deterministic React 19 compatibility scan artifact. Approve to continue to the React 19 migration plan."
         meta={
           <>
             <Badge tone="success" variant="soft" withDot>
@@ -49,7 +49,7 @@ export function ScanReportScreen(): JSX.Element {
             <StatusIndicator
               variant="chip"
               status={hasReport ? 'success' : 'idle'}
-              label={hasReport ? 'Report ready' : 'No report yet'}
+              label={hasReport ? 'React 19 report ready' : 'No report yet'}
             />
           </>
         }
@@ -71,8 +71,8 @@ export function ScanReportScreen(): JSX.Element {
               onClick={() => navigate(ROUTES.migrationPlan)}
               title={
                 hasReport
-                  ? 'Continue to the migration plan step'
-                  : 'A successful scan is required before continuing.'
+                  ? 'Continue to the React 19 migration plan step'
+                  : 'A successful React 19 compatibility scan is required before continuing.'
               }
             >
               Continue to Migration Plan
@@ -112,8 +112,8 @@ function NoReportState({
     <EmptyState
       icon="report"
       fullWidth
-      title="No report yet"
-      description="Run the scanner on Step 2 to populate the readiness report. Once a scan completes, this view becomes a read-only review surface."
+      title="No React 19 readiness report yet"
+      description="Run the React 19 compatibility scan on Step 2 to populate the readiness report. Once the scan completes, this view becomes a read-only review surface."
       action={
         <Button
           variant="secondary"

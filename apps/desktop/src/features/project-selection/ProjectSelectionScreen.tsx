@@ -47,7 +47,7 @@ export function ProjectSelectionScreen(): JSX.Element {
       <PageHeader
         eyebrow={<StepEyebrow number={1} icon="folder" label="Project" />}
         title="Select a project"
-        subtitle="Choose the React project you want Migrate Pilot to analyse. The original repository will remain read-only throughout the session."
+        subtitle="Choose the React 16, React 17, or React 18 project you want to migrate to React 19. The original repository stays read-only throughout the session."
         meta={
           <>
             <Badge tone="success" variant="soft" withDot>
@@ -81,8 +81,8 @@ export function ProjectSelectionScreen(): JSX.Element {
               onClick={() => navigate(ROUTES.scanner)}
               title={
                 canContinue
-                  ? 'Continue to scan'
-                  : 'Select a valid React project to continue'
+                  ? 'Continue to the React 19 compatibility scan'
+                  : 'Select a valid React 16/17/18 project to continue'
               }
             >
               Continue to Scan
@@ -125,7 +125,8 @@ function PreSelectionGuide(): JSX.Element {
           <div>
             <CardTitle>What Migrate Pilot will check</CardTitle>
             <CardDescription>
-              Quick metadata read only. No installs, no scans, no scripts run.
+              Quick React 19 readiness metadata read only. No installs, no scans, no
+              scripts run.
             </CardDescription>
           </div>
           <Badge tone="accent" variant="soft" uppercase>

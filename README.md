@@ -1,17 +1,18 @@
 # Migrate Pilot
 
-> Local-first AI-human orchestration tool for safely migrating old React projects to modern React + TypeScript.
+> Local-first AI-human orchestration tool for safely migrating React 16, React 17, and React 18 projects to **React 19**.
 
 **Core principle:** _AI executes. Human approves. Git protects._
 
-Migrate Pilot scans an existing React codebase, generates a step-by-step migration plan, creates an isolated Git worktree workspace, executes one migration step at a time, surfaces diffs and validation results for human approval, and commits only after a human says yes. The original project is never touched.
+Migrate Pilot runs a React 19 compatibility scan on an existing React codebase, generates a React-major-aware React 19 migration plan, creates an isolated Git worktree workspace, executes one React 19 migration step at a time, surfaces diffs and validation results for human approval, and commits only after a human says yes. The original project is never touched.
 
 ---
 
 ## V1 Scope
 
-- **Supported source projects:** React 16 / 17, JS or JSX, CRA / Vite / Webpack, npm / yarn / pnpm, basic Router + Redux/Context.
-- **Migration direction:** JavaScript -> TypeScript, JSX -> TSX, gradual typing, deprecated lifecycle fixes.
+- **Source:** React 16, React 17, or React 18 projects (JS / JSX or TS / TSX), CRA / Vite / Webpack, npm / yarn / pnpm, basic Router + Redux/Context.
+- **Target:** React 19.
+- **Method:** staged migration, phase-based plan, Git worktree workspace, human-reviewed diffs, validation gates per step.
 - **Runtime model:** local-first desktop app. No login, no cloud backend, no telemetry.
 - **Safety model:** Git worktree workspace + per-step validation + rollback.
 
