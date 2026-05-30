@@ -29,6 +29,23 @@ import {
 
 const VALIDATION_SCRIPT_PRIORITY = ['build', 'test', 'lint', 'typecheck'] as const;
 const SUPPORTED_SCRIPTED_EXECUTOR_KEYS = new Set<string>(['package-json-dependency-update']);
+const VALIDATION_SCRIPT_ALIASES = {
+  typecheck: ['typecheck', 'type-check', 'tsc'],
+} as const;
+
+interface ValidationCommandCatalog {
+  readonly all: readonly string[];
+  readonly build?: string;
+  readonly test?: string;
+  readonly lint?: string;
+  readonly typecheck?: string;
+}
+
+interface StepCommandContext {
+  readonly packageManagerKnown: boolean;
+  readonly installCommand?: string;
+  readonly validationCatalog: ValidationCommandCatalog;
+}
 
 export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19MigrationPlanV2 {
   const gate = resolveReact19PlanGenerationGate(scanReport);
@@ -167,6 +184,12 @@ export function buildReact19PlanStepsFromRiskEngine(
   if (track === null || sourceMajor === undefined) return [];
 
   const validationStrategy = buildReact19ValidationStrategy(scanReport);
+  const installCommand = resolveInstallCommand(scanReport);
+  const commandContext: StepCommandContext = {
+    packageManagerKnown: scanReport.dependencies.packageManager !== 'unknown',
+    validationCatalog: resolveValidationCommandCatalog(scanReport),
+    ...(installCommand !== undefined ? { installCommand } : {}),
+  };
   const steps: MigrationPlanStepV2[] = [];
   let order = 1;
 
@@ -217,7 +240,7 @@ export function buildReact19PlanStepsFromRiskEngine(
     });
   }
 
-  const grouped = groupRiskRecommendationsIntoPlanSteps(scanReport);
+  const grouped = groupRiskRecommendationsIntoPlanSteps(scanReport, commandContext);
   for (const step of grouped) {
     steps.push({ ...step, order: order++ });
   }
@@ -317,6 +340,7 @@ export function buildReact19PlanStepsFromRiskEngine(
 
 export function groupRiskRecommendationsIntoPlanSteps(
   scanReport: ScanReport,
+  commandContext: StepCommandContext,
 ): MigrationPlanStepV2[] {
   const track = resolveReact19PlanTrack(scanReport);
   const sourceMajor = scanReport.react19MigrationContext?.sourceReactMajor;
@@ -338,7 +362,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
         items: preflight,
         forceExecutionType: 'manual',
         forceCanRunInExecution: false,
-      }),
+      }, commandContext),
     );
   }
 
@@ -353,7 +377,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
           'Resolve missing or weak validation gates so each migration step can be verified consistently.',
         reason: 'Reliable lint/typecheck/test/build signals reduce migration regression risk.',
         items: validationReadiness,
-      }),
+      }, commandContext),
     );
   }
 
@@ -369,7 +393,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
         items: bridgeItems.filter((item) => item.riskLevel !== 'info'),
         forceRiskLevel: 'high',
         forceBlocksUpgrade: true,
-      }),
+      }, commandContext),
     );
   }
 
@@ -395,6 +419,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
             'Dependency foundation updates reduce install/build instability during React package upgrades.',
           items: foundationItems,
         },
+        commandContext,
       ),
     );
   }
@@ -409,7 +434,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
       fallbackRiskLevel: sourceMajor === 18 ? 'high' : 'blocker',
       forceHumanReview: true,
       fallbackIssueCode: 'react19-upgrade-preparation',
-    }),
+    }, commandContext),
   );
 
   const toolingItems = byPhase.tooling.filter((item) => !isValidationSignal(item));
@@ -426,7 +451,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
           'Update build/tooling configuration risks (build tool age and bundler compatibility).',
         reason: 'Tooling compatibility is required for stable React 19 builds and CI signals.',
         items: pureToolingItems,
-      }),
+      }, commandContext),
     );
   }
   if (jsxTransformItems.length > 0 && track !== 'react-18-to-19') {
@@ -437,7 +462,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
           'Adopt and verify modern JSX transform configuration needed for React 19 compatibility.',
         reason: 'JSX transform mismatches create compile/runtime instability during migration.',
         items: jsxTransformItems,
-      }),
+      }, commandContext),
     );
   }
 
@@ -450,7 +475,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
           'Address legacy APIs, lifecycle patterns, and component patterns incompatible with modern React behavior.',
         reason: 'API compatibility changes are high-impact and must be explicitly reviewed.',
         items: apiCompatibilityItems,
-      }),
+      }, commandContext),
     );
   }
 
@@ -466,7 +491,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
           'Address TypeScript and routing readiness risks that influence source migration stability.',
         reason: 'Readiness modernization reduces late-stage integration regressions.',
         items: sourceModernizationItems,
-      }),
+      }, commandContext),
     );
   }
 
@@ -479,7 +504,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
           'Address testing framework compatibility risks so migration regressions are detectable during rollout.',
         reason: 'Migration confidence depends on reliable test feedback throughout step execution.',
         items: testingReadinessItems,
-      }),
+      }, commandContext),
     );
   }
 
@@ -561,6 +586,7 @@ function createGroupedStep(
     readonly fallbackIssueCode?: string;
     readonly forceCanRunInExecution?: boolean;
   },
+  commandContext: StepCommandContext,
 ): Omit<MigrationPlanStepV2, 'order'> {
   const items = config.items;
   const riskLevel =
@@ -581,9 +607,16 @@ function createGroupedStep(
     sourceIssueCodes.push(config.fallbackIssueCode);
   }
 
-  const validationCommands = Array.from(
+  const validationCommandsFromRisk = Array.from(
     new Set(items.flatMap((item) => item.validation.suggestedCommands ?? [])),
   );
+  const stepCommands = resolveStepCommands({
+    id,
+    phase,
+    executionType,
+    validationCommandsFromRisk,
+    context: commandContext,
+  });
   const status: MigrationPlanStepV2['status'] =
     items.some((item) => item.blocksPlanGeneration === true) ? 'blocked' : 'pending';
 
@@ -603,7 +636,7 @@ function createGroupedStep(
     phase,
     executionType,
     issueCodes: sourceIssueCodes,
-    validationCommands,
+    validationCommands: stepCommands.validationCommands,
   });
   const canRunInExecution = config.forceCanRunInExecution ?? isExecutableStepCapability(
     executorResolution.capability,
@@ -642,8 +675,12 @@ function createGroupedStep(
     requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
     requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
     expectedChangedFiles: expectedFilesForIssueCodes(sourceIssueCodes),
-    expectedCommands: validationCommands,
-    validationCommands,
+    ...(stepCommands.expectedCommands.length > 0
+      ? { expectedCommands: stepCommands.expectedCommands }
+      : {}),
+    ...(stepCommands.validationCommands.length > 0
+      ? { validationCommands: stepCommands.validationCommands }
+      : {}),
     rollbackStrategy: resolveMigrationPlanStepRollbackStrategy(executionType),
     ...(execution !== undefined ? { execution } : {}),
     sourceIssueCodes,
@@ -681,29 +718,104 @@ function mapExecutionMetadata(
 }
 
 function resolveValidationCommands(scanReport: ScanReport): string[] {
-  const signals = scanReport.react19CompatibilityReport?.signals.availableValidationCommands ?? [];
-  const scripts = scanReport.scripts.raw;
-  const runPrefix =
-    scanReport.dependencies.packageManager === 'unknown'
-      ? 'npm run'
-      : `${scanReport.dependencies.packageManager} run`;
+  return [...resolveValidationCommandCatalog(scanReport).all];
+}
 
-  const candidates = signals.length > 0 ? signals : Object.keys(scripts);
-  const commands: string[] = [];
-  for (const scriptName of candidates) {
-    if (
-      scriptName !== 'build' &&
-      scriptName !== 'test' &&
-      scriptName !== 'lint' &&
-      scriptName !== 'typecheck' &&
-      scriptName !== 'type-check' &&
-      scriptName !== 'tsc'
-    ) {
-      continue;
-    }
-    commands.push(`${runPrefix} ${scriptName}`);
+function resolveValidationCommandCatalog(scanReport: ScanReport): ValidationCommandCatalog {
+  if (scanReport.dependencies.packageManager === 'unknown') {
+    // Avoid inventing package-manager-specific commands.
+    return { all: [] };
   }
-  return Array.from(new Set(commands));
+  const candidates = new Set(
+    scanReport.react19CompatibilityReport?.signals.availableValidationCommands?.length
+      ? scanReport.react19CompatibilityReport.signals.availableValidationCommands
+      : Object.keys(scanReport.scripts.raw),
+  );
+  const build = candidates.has('build') ? formatRunCommand(scanReport, 'build') : undefined;
+  const test = candidates.has('test') ? formatRunCommand(scanReport, 'test') : undefined;
+  const lint = candidates.has('lint') ? formatRunCommand(scanReport, 'lint') : undefined;
+  const typecheckScript = VALIDATION_SCRIPT_ALIASES.typecheck.find((script) =>
+    candidates.has(script),
+  );
+  const typecheck =
+    typecheckScript !== undefined ? formatRunCommand(scanReport, typecheckScript) : undefined;
+  const all = [build, test, lint, typecheck].filter((command): command is string => command !== undefined);
+  return {
+    all,
+    ...(build !== undefined ? { build } : {}),
+    ...(test !== undefined ? { test } : {}),
+    ...(lint !== undefined ? { lint } : {}),
+    ...(typecheck !== undefined ? { typecheck } : {}),
+  };
+}
+
+function resolveInstallCommand(scanReport: ScanReport): string | undefined {
+  const packageManager = scanReport.dependencies.packageManager;
+  if (packageManager === 'unknown') return undefined;
+  return `${packageManager} install`;
+}
+
+function formatRunCommand(scanReport: ScanReport, scriptName: string): string {
+  const packageManager = scanReport.dependencies.packageManager;
+  return `${packageManager} run ${scriptName}`;
+}
+
+function resolveStepCommands(input: {
+  readonly id: string;
+  readonly phase: ReactMigrationPhase;
+  readonly executionType: MigrationPlanStepV2ExecutionType;
+  readonly validationCommandsFromRisk: readonly string[];
+  readonly context: StepCommandContext;
+}): {
+  readonly expectedCommands: readonly string[];
+  readonly validationCommands: readonly string[];
+} {
+  if (!input.context.packageManagerKnown) {
+    return { expectedCommands: [], validationCommands: [] };
+  }
+
+  const riskValidation = dedupeCommands(input.validationCommandsFromRisk);
+  const fullValidation = dedupeCommands(input.context.validationCatalog.all);
+  const buildAndTest = dedupeCommands([
+    input.context.validationCatalog.build,
+    input.context.validationCatalog.test,
+  ]);
+
+  if (isDependencyOrPackageStep(input.phase, input.id)) {
+    return {
+      expectedCommands: dedupeCommands([input.context.installCommand, ...riskValidation]),
+      validationCommands: dedupeCommands([...buildAndTest, ...riskValidation]),
+    };
+  }
+
+  if (input.phase === 'api-compatibility' || input.executionType === 'codemod' || input.executionType === 'ai-assisted') {
+    return {
+      expectedCommands: riskValidation,
+      validationCommands: dedupeCommands([...fullValidation, ...riskValidation]),
+    };
+  }
+
+  if (input.executionType === 'manual') {
+    return {
+      expectedCommands: riskValidation,
+      validationCommands: dedupeCommands([...fullValidation, ...riskValidation]),
+    };
+  }
+
+  return {
+    expectedCommands: riskValidation,
+    validationCommands: riskValidation,
+  };
+}
+
+function isDependencyOrPackageStep(phase: ReactMigrationPhase, stepId: string): boolean {
+  return phase === 'react-19-upgrade' || stepId.startsWith('react19.dependencies.');
+}
+
+function dedupeCommands(commands: readonly (string | undefined)[]): string[] {
+  return Array.from(
+    new Set(commands.filter((command): command is string => typeof command === 'string' && command.length > 0)),
+  );
 }
 
 function resolveStepExecutionType(

@@ -546,9 +546,16 @@ function PlanStepsCard({
                 </p>
               ) : null}
               <div className="mt-2 flex flex-wrap gap-1.5">
+                {(step.expectedCommands ?? []).map((command) => (
+                  <Badge key={`expected:${step.id}:${command}`} tone="neutral" variant="soft" className="font-mono">
+                    expected: {command}
+                  </Badge>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
                 {(step.validationCommands ?? []).map((command) => (
-                  <Badge key={command} tone="info" variant="soft" className="font-mono">
-                    {command}
+                  <Badge key={`validation:${step.id}:${command}`} tone="info" variant="soft" className="font-mono">
+                    validate: {command}
                   </Badge>
                 ))}
               </div>

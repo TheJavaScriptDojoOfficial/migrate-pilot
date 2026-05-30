@@ -108,6 +108,16 @@ export function MigrationPlanStepCard({
           </DetailRow>
         ) : null}
 
+        {step.expectedCommands !== undefined && step.expectedCommands.length > 0 ? (
+          <DetailRow label="Expected commands">
+            {step.expectedCommands.map((cmd) => (
+              <Badge key={`expected:${cmd}`} tone="neutral" variant="soft" className="font-mono">
+                {cmd}
+              </Badge>
+            ))}
+          </DetailRow>
+        ) : null}
+
         <DetailRow label="Executor">
           <Badge tone="info" variant="outline" className="font-mono">
             {step.executorKey ?? 'manual-only'}
