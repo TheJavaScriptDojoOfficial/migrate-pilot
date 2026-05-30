@@ -31,29 +31,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::{CommandError, CommandResult};
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspacePreflightInput {
-    pub source_path: String,
-    pub project_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceCreateInput {
-    pub source_path: String,
-    pub workspace_path: String,
-    pub branch_name: String,
-    pub strategy: String,
-}
 
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -145,16 +129,23 @@ fn is_valid_branch_name(name: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Read-only preflight. Never mutates the source path.
-#[tauri::command]
+///
+/// Tauri parameter binding: the `sourcePath` and `projectName` arguments
+/// are destructured directly from the JS payload (`{ sourcePath, projectName }`).
+/// We deliberately avoid wrapping in a struct so the TS bridge stays flat
+/// and the call site reads cleanly — matching the convention used by
+/// `project_read_metadata` and `project_scan`.
+#[tauri::command(rename_all = "camelCase")]
 pub async fn workspace_preflight(
-    input: WorkspacePreflightInput,
+    source_path: String,
+    project_name: String,
 ) -> CommandResult<WorkspacePreflightRaw> {
-    let project_name = input.project_name.trim().to_string();
+    let project_name = project_name.trim().to_string();
     if project_name.is_empty() {
         return Err(CommandError::InvalidInput("project name is empty".into()));
     }
 
-    let source = canonicalise_directory(&input.source_path)?;
+    let source = canonicalise_directory(&source_path)?;
     let source_path_str = source.to_string_lossy().to_string();
 
     // Move the read-only inspection off the async runtime so the UI thread
@@ -320,14 +311,17 @@ fn run_preflight(source: &Path, project_name: &str) -> CommandResult<WorkspacePr
 // Create
 // ---------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub async fn workspace_create(
-    input: WorkspaceCreateInput,
+    source_path: String,
+    workspace_path: String,
+    branch_name: String,
+    strategy: String,
 ) -> CommandResult<WorkspaceCreationResultRaw> {
-    let strategy = input.strategy.trim().to_string();
-    let branch_name = input.branch_name.trim().to_string();
-    let workspace_path_input = input.workspace_path.trim().to_string();
-    let source_path_input = input.source_path.trim().to_string();
+    let strategy = strategy.trim().to_string();
+    let branch_name = branch_name.trim().to_string();
+    let workspace_path_input = workspace_path.trim().to_string();
+    let source_path_input = source_path.trim().to_string();
 
     if strategy.is_empty() {
         return Err(CommandError::InvalidInput("strategy is empty".into()));
