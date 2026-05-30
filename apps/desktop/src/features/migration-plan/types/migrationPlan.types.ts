@@ -1,6 +1,7 @@
-import type { ScanReport } from '@features/scanner';
+import type { ScanIssueCode, ScanReport } from '@features/scanner';
 import type {
   React19ExecutionCapability,
+  ReactMigrationPhase,
   React19MigrationPhase,
   React19MigrationRiskLevel,
   ReactMigrationTrack,
@@ -16,6 +17,68 @@ export type MigrationPlanStatus =
 
 export type React19PlanStepStatus = 'pending' | 'skipped' | 'blocked';
 export type MigrationStepStatus = React19PlanStepStatus;
+
+export type MigrationPlanStepV2Risk = 'low' | 'medium' | 'high';
+export type MigrationPlanStepV2Status =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'skipped';
+export type MigrationPlanStepV2ExecutionType =
+  | 'scripted'
+  | 'codemod'
+  | 'ai-assisted'
+  | 'manual'
+  | 'validation-only';
+export type MigrationPlanStepV2Capability =
+  | 'available'
+  | 'not-yet-supported'
+  | 'manual-only'
+  | 'blocked';
+export type MigrationPlanStepV2RollbackStrategy =
+  | 'git-revert'
+  | 'discard-worktree-changes'
+  | 'manual';
+
+/**
+ * Planner/Executor contract V2.
+ *
+ * This execution-aware shape is the canonical step contract for R5+.
+ * R4 `React19PlanStep` remains temporarily for backward compatibility while
+ * Planner V2 and the migration-plan UI are migrated incrementally.
+ */
+export interface MigrationPlanStepV2 {
+  readonly id: string;
+  readonly order: number;
+  readonly phase: ReactMigrationPhase;
+  readonly track: ReactMigrationTrack;
+
+  readonly title: string;
+  readonly description: string;
+  readonly reason: string;
+
+  readonly risk: MigrationPlanStepV2Risk;
+  readonly status: MigrationPlanStepV2Status;
+
+  readonly issueCodes: readonly ScanIssueCode[];
+
+  readonly executionType: MigrationPlanStepV2ExecutionType;
+  readonly executorKey?: string;
+
+  readonly capability: MigrationPlanStepV2Capability;
+  readonly blockedReason?: string;
+
+  readonly requiresWorkspace: boolean;
+  readonly requiresApprovalBeforeRun: boolean;
+  readonly requiresValidationAfterRun: boolean;
+
+  readonly expectedChangedFiles?: readonly string[];
+  readonly expectedCommands?: readonly string[];
+  readonly validationCommands?: readonly string[];
+
+  readonly rollbackStrategy: MigrationPlanStepV2RollbackStrategy;
+}
 
 export type React19PlanStepExecutionType =
   | 'scriptable'
