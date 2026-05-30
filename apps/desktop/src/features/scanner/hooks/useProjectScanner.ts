@@ -5,6 +5,10 @@
  * and synchronises completion into the cross-feature workflow store so
  * the next step (Migration Plan) becomes reachable.
  *
+ * R2 step 5 — the completed scan report (including the React 19 readiness
+ * view model) is persisted to `localStorage` so the Step 3 report screen
+ * and plan-generation gate survive an app reload within the same session.
+ *
  * Why a dedicated store rather than `useSessionStore`?
  *   - Keeps the scan-in-progress state machine + error payload out of the
  *     small session store. The session store only needs to know whether
@@ -13,9 +17,14 @@
  */
 
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 import { useSessionStore } from '@shared/hooks/useSessionState';
 import { useWorkflowProgressStore } from '@shared/hooks/useWorkflowProgress';
+import {
+  buildReact19ReadinessReportViewModel,
+  resolveReact19PlanGenerationGate,
+} from '@features/react19-migration';
 
 import {
   ScannerServiceError,
@@ -58,34 +67,48 @@ const INITIAL_STATE: ScannerStoreState = {
   startedAt: undefined,
 };
 
-export const useProjectScannerStore = create<Store>((set) => ({
-  ...INITIAL_STATE,
+const SCANNER_STORAGE_KEY = 'migrate-pilot-scanner-v1';
 
-  scan: async () => {
-    const project = useSessionStore.getState().project;
-    if (!project) {
-      set({
-        status: 'failed',
-        error: {
-          kind: 'no-project-selected',
-          message:
-            'No project is selected. Pick a React project on the previous step before scanning.',
-        },
-      });
-      return;
-    }
-    await runScan(project.path, set);
-  },
+export const useProjectScannerStore = create<Store>()(
+  persist(
+    (set) => ({
+      ...INITIAL_STATE,
 
-  scanPath: async (path) => {
-    await runScan(path, set);
-  },
+      scan: async () => {
+        const project = useSessionStore.getState().project;
+        if (!project) {
+          set({
+            status: 'failed',
+            error: {
+              kind: 'no-project-selected',
+              message:
+                'No project is selected. Pick a React project on the previous step before scanning.',
+            },
+          });
+          return;
+        }
+        await runScan(project.path, set);
+      },
 
-  reset: () => {
-    set({ ...INITIAL_STATE });
-    useWorkflowProgressStore.getState().markStepIncomplete('scan');
-  },
-}));
+      scanPath: async (path) => {
+        await runScan(path, set);
+      },
+
+      reset: () => {
+        set({ ...INITIAL_STATE });
+        useWorkflowProgressStore.getState().markStepIncomplete('scan');
+      },
+    }),
+    {
+      name: SCANNER_STORAGE_KEY,
+      partialize: (state) => ({
+        status: state.status === 'scanning' ? 'idle' : state.status,
+        report: state.report,
+        startedAt: state.startedAt,
+      }),
+    },
+  ),
+);
 
 /* -------------------------------------------------------------------------- */
 /* internals                                                                  */
@@ -137,9 +160,32 @@ export const selectScanError = (s: ScannerStoreState): ScanError | undefined =>
   s.error;
 
 /**
+ * Resolve the React 19 readiness report view model from the active scan
+ * report. Rebuilds on the fly for older persisted reports that predate
+ * step 5.
+ */
+export function selectReact19ReadinessReport(
+  s: ScannerStoreState,
+): ReturnType<typeof buildReact19ReadinessReportViewModel> | undefined {
+  if (s.report === undefined || s.status !== 'completed') return undefined;
+  return (
+    s.report.react19ReadinessReport ??
+    buildReact19ReadinessReportViewModel({ scanReport: s.report })
+  );
+}
+
+/**
  * True when the scanner has completed at least one successful pass for the
  * currently selected project.
  */
 export function selectScanIsReadyForPlan(s: ScannerStoreState): boolean {
   return s.status === 'completed' && s.report !== undefined;
+}
+
+/**
+ * True when plan generation is allowed for the current scan report.
+ */
+export function selectCanGenerateMigrationPlan(s: ScannerStoreState): boolean {
+  if (s.status !== 'completed' || s.report === undefined) return false;
+  return resolveReact19PlanGenerationGate(s.report).canGeneratePlan;
 }

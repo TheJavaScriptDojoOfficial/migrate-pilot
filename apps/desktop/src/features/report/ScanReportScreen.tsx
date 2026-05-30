@@ -10,39 +10,37 @@ import { StepEyebrow } from '@shared/ui/StepEyebrow';
 import { ROUTES } from '@shared/constants/routes';
 
 import {
-  ScanDependencyCard,
-  ScanReact19CompatibilityCard,
-  ScanReact19ContextCard,
-  ScanRecommendations,
-  ScanRiskCard,
-  ScanSourceAnalysisCard,
-  ScanSummaryCard,
+  selectCanGenerateMigrationPlan,
+  selectReact19ReadinessReport,
   selectScanReport,
   selectScanStatus,
   useProjectScannerStore,
 } from '@features/scanner';
 
+import { React19ReadinessReport } from './components/React19ReadinessReport';
+
 /**
  * Step 3 — Scan Report.
  *
- * Read-only view of the report produced by Step 2. Both screens consume
- * the same scanner store so the data stays consistent — the difference is
- * intent: this screen is a "review the artifact" surface, while
- * `ScannerScreen` owns the run / re-run state machine.
+ * Read-only React 19 migration readiness report produced by Step 2.
+ * Consumes the persisted scanner store (including the readiness view model)
+ * so returning to this screen or reloading the app keeps the latest report.
  */
 export function ScanReportScreen(): JSX.Element {
   const navigate = useNavigate();
   const status = useProjectScannerStore(selectScanStatus);
   const report = useProjectScannerStore(selectScanReport);
+  const readinessReport = useProjectScannerStore(selectReact19ReadinessReport);
+  const canGeneratePlan = useProjectScannerStore(selectCanGenerateMigrationPlan);
 
-  const hasReport = status === 'completed' && report !== undefined;
+  const hasReport = status === 'completed' && report !== undefined && readinessReport !== undefined;
 
   return (
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={3} icon="report" label="Report" />}
-        title="React 19 readiness report"
-        subtitle="Review the deterministic React 19 compatibility scan artifact. Approve to continue to the React 19 migration plan."
+        title="React 19 Migration Readiness Report"
+        subtitle="Review the deterministic React 16/17/18 → React 19 migration readiness artifact before generating a migration plan."
         meta={
           <>
             <Badge tone="success" variant="soft" withDot>
@@ -50,8 +48,14 @@ export function ScanReportScreen(): JSX.Element {
             </Badge>
             <StatusIndicator
               variant="chip"
-              status={hasReport ? 'success' : 'idle'}
-              label={hasReport ? 'React 19 report ready' : 'No report yet'}
+              status={hasReport ? (canGeneratePlan ? 'success' : 'warning') : 'idle'}
+              label={
+                hasReport
+                  ? canGeneratePlan
+                    ? 'Ready for plan generation'
+                    : 'Plan generation blocked'
+                  : 'No report yet'
+              }
             />
           </>
         }
@@ -69,12 +73,15 @@ export function ScanReportScreen(): JSX.Element {
               variant="primary"
               size="md"
               trailingIcon={<Icon name="arrow-right" />}
-              disabled={!hasReport}
+              disabled={!hasReport || !canGeneratePlan}
               onClick={() => navigate(ROUTES.migrationPlan)}
               title={
-                hasReport
-                  ? 'Continue to the React 19 migration plan step'
-                  : 'A successful React 19 compatibility scan is required before continuing.'
+                !hasReport
+                  ? 'A successful React 19 compatibility scan is required before continuing.'
+                  : !canGeneratePlan
+                    ? readinessReport?.planGenerationExplanation ??
+                      'Plan generation is blocked until eligibility issues are resolved.'
+                    : 'Continue to the React 19 migration plan step'
               }
             >
               Continue to Migration Plan
@@ -85,30 +92,8 @@ export function ScanReportScreen(): JSX.Element {
 
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
-          {hasReport && report !== undefined ? (
-            <>
-              <ScanSummaryCard report={report} />
-              <ScanReact19ContextCard
-                {...(report.react19MigrationContext !== undefined
-                  ? { context: report.react19MigrationContext }
-                  : {})}
-                {...(report.react19SupportStatus !== undefined
-                  ? { status: report.react19SupportStatus }
-                  : {})}
-              />
-              {report.react19CompatibilityReport !== undefined ? (
-                <ScanReact19CompatibilityCard
-                  report={report.react19CompatibilityReport}
-                />
-              ) : null}
-              <ScanRiskCard risks={report.risks} />
-              <ScanDependencyCard
-                dependencies={report.dependencies}
-                scripts={report.scripts}
-              />
-              <ScanSourceAnalysisCard source={report.sourceAnalysis} />
-              <ScanRecommendations recommendations={report.recommendations} />
-            </>
+          {hasReport && readinessReport !== undefined ? (
+            <React19ReadinessReport viewModel={readinessReport} />
           ) : (
             <NoReportState onGoToScanner={() => navigate(ROUTES.scanner)} />
           )}
@@ -128,7 +113,7 @@ function NoReportState({
       icon="report"
       fullWidth
       title="No React 19 readiness report yet"
-      description="Run the React 19 compatibility scan on Step 2 to populate the readiness report. Once the scan completes, this view becomes a read-only review surface."
+      description="Run the React 19 compatibility scan on Step 2 to populate the migration readiness report. Once the scan completes, this view becomes a read-only review surface and is saved for the session."
       action={
         <Button
           variant="secondary"

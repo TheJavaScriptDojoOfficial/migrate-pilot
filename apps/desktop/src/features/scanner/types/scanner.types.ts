@@ -15,6 +15,7 @@ import type { PackageManager } from '@features/project-selection';
 import type {
   React19CompatibilityReport,
   React19MigrationContext,
+  React19ReadinessReportViewModel,
   React19SupportStatus,
 } from '@features/react19-migration';
 
@@ -253,6 +254,13 @@ export interface ScanReport {
    * current scanner always populates it.
    */
   readonly react19CompatibilityReport?: React19CompatibilityReport;
+  /**
+   * React 19 readiness report view model (R2 step 5). Structured report
+   * output for the Step 3 UI and session persistence. Optional for older
+   * serialised reports — callers can rebuild via
+   * `buildReact19ReadinessReportViewModel`.
+   */
+  readonly react19ReadinessReport?: React19ReadinessReportViewModel;
 }
 
 /* -------------------------------------------------------------------------- */

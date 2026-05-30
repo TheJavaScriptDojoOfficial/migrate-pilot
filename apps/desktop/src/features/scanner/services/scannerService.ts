@@ -29,6 +29,7 @@ import type { PackageManager } from '@features/project-selection';
 import {
   computeReact19CompatibilityReport,
   computeReact19MigrationContext,
+  buildReact19ReadinessReportViewModel,
 } from '@features/react19-migration';
 import type {
   React19PackageManifest,
@@ -177,7 +178,7 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
     gitClean: projectInfo.gitClean,
   });
 
-  return {
+  const scanReportBase = {
     id: makeReportId(raw),
     projectPath: raw.path,
     generatedAt: new Date().toISOString(),
@@ -192,6 +193,15 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
       : {}),
     react19SupportStatus: react19.status,
     react19CompatibilityReport: compatibilityReport,
+  };
+
+  const react19ReadinessReport = buildReact19ReadinessReportViewModel({
+    scanReport: scanReportBase as ScanReport,
+  });
+
+  return {
+    ...scanReportBase,
+    react19ReadinessReport,
   };
 }
 

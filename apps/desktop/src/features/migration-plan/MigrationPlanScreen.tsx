@@ -18,11 +18,12 @@ import { StatusIndicator } from '@shared/ui/StatusIndicator';
 import { StepEyebrow } from '@shared/ui/StepEyebrow';
 import { ROUTES } from '@shared/constants/routes';
 
-import type { React19SupportStatus } from '@features/react19-migration';
+import { resolveReact19PlanGenerationGate } from '@features/react19-migration';
 import {
   selectScanReport,
   selectScanStatus,
   useProjectScannerStore,
+  type ScanReport,
 } from '@features/scanner';
 
 import { MigrationPlanActionBar } from './components/MigrationPlanActionBar';
@@ -79,14 +80,13 @@ export function MigrationPlanScreen(): JSX.Element {
   const isApproved = planStatus === 'approved';
   const isDraft = planStatus === 'generated';
 
-  // R2 step 2 — plan generation gate. The scanner now emits a structured
-  // `react19SupportStatus.canGeneratePlan`; if it is `false`, the entire
-  // plan-generation pathway must be refused. Pre-R2 reports do not carry
-  // the field — those are treated as allowed for backwards compatibility.
-  const supportStatus = scanReport?.react19SupportStatus;
-  const isPlanGenerationGated =
-    supportStatus !== undefined && supportStatus.canGeneratePlan === false;
-  const gateReason = supportStatus?.message;
+  // R2 step 5 — plan generation gate via shared readiness view-model logic.
+  const planGate =
+    scanReport !== undefined
+      ? resolveReact19PlanGenerationGate(scanReport)
+      : undefined;
+  const isPlanGenerationGated = planGate !== undefined && !planGate.canGeneratePlan;
+  const gateReason = planGate?.reasons[0] ?? planGate?.explanation;
 
   // Invalidate the plan if the upstream ScanReport changes. This effect
   // is the single source of truth for the cross-store invariant: a plan is
@@ -163,9 +163,10 @@ export function MigrationPlanScreen(): JSX.Element {
             <MigrationPlanEmptyState
               onGoToScanner={() => navigate(ROUTES.scanner)}
             />
-          ) : isPlanGenerationGated && supportStatus !== undefined ? (
+          ) : isPlanGenerationGated && planGate !== undefined ? (
             <BlockedByEligibilityState
-              status={supportStatus}
+              planGate={planGate}
+              scanReport={scanReport}
               onGoToScanner={() => navigate(ROUTES.scanner)}
             />
           ) : planStatus === 'idle' ? (
@@ -261,24 +262,18 @@ function IdleState({ projectName, onGenerate }: IdleStateProps): JSX.Element {
  * re-run the scan rather than chase a phantom plan.
  */
 function BlockedByEligibilityState({
-  status,
+  planGate,
+  scanReport,
   onGoToScanner,
 }: {
-  readonly status: React19SupportStatus;
+  readonly planGate: ReturnType<typeof resolveReact19PlanGenerationGate>;
+  readonly scanReport: ScanReport;
   readonly onGoToScanner: () => void;
 }): JSX.Element {
-  const tone =
-    status.status === 'warning'
-      ? 'warning'
-      : status.status === 'unknown'
-        ? 'neutral'
-        : 'danger';
-  const title =
-    status.status === 'warning'
-      ? 'React 19 migration is not required for this project'
-      : status.status === 'unknown'
-        ? 'React 19 migration eligibility could not be determined'
-        : 'React 19 migration plan is blocked';
+  const status = scanReport.react19SupportStatus;
+  const primaryReason = planGate.reasons[0] ?? planGate.explanation;
+  const tone = 'danger';
+  const title = 'React 19 migration plan is blocked';
   return (
     <Card>
       <CardHeader>
@@ -291,39 +286,57 @@ function BlockedByEligibilityState({
           </CardDescription>
         </div>
         <Badge tone={tone} variant="soft" withDot uppercase>
-          {status.status === 'warning'
-            ? 'Not required'
-            : status.status === 'unknown'
-              ? 'Needs review'
-              : 'Blocked'}
+          Blocked
         </Badge>
       </CardHeader>
       <CardSection>
         <p className="rounded-md border border-canvas-border bg-canvas-overlay px-3 py-2 text-xs leading-relaxed text-ink">
-          {status.message}
+          {primaryReason}
         </p>
+        {planGate.reasons.length > 1 ? (
+          <ul className="mt-3 space-y-1.5">
+            {planGate.reasons.slice(1).map((reason) => (
+              <li
+                key={reason}
+                className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger"
+              >
+                {reason}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </CardSection>
       <CardSection label="Detected">
         <ul className="grid gap-1 text-xs text-ink-muted sm:grid-cols-2">
           <DetectedRow
             label="react"
-            value={status.sourceReactVersion ?? 'not detected'}
+            value={
+              status?.sourceReactVersion ??
+              scanReport.dependencies.reactVersion ??
+              'not detected'
+            }
           />
           <DetectedRow
             label="react-dom"
-            value={status.reactDomVersion ?? 'not detected'}
+            value={
+              status?.reactDomVersion ??
+              scanReport.dependencies.reactDomVersion ??
+              'not detected'
+            }
           />
           <DetectedRow
             label="React major"
             value={
-              status.sourceReactMajor !== undefined
+              status?.sourceReactMajor !== undefined
                 ? `React ${status.sourceReactMajor}`
-                : '—'
+                : scanReport.dependencies.reactMajor !== undefined
+                  ? `React ${scanReport.dependencies.reactMajor}`
+                  : '—'
             }
           />
           <DetectedRow
             label="Package manager"
-            value={status.packageManager ?? 'not detected'}
+            value={status?.packageManager ?? scanReport.dependencies.packageManager}
           />
         </ul>
       </CardSection>

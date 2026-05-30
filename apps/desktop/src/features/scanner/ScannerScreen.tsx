@@ -21,7 +21,11 @@ import { ScanRecommendations } from './components/ScanRecommendations';
 import { ScanRiskCard } from './components/ScanRiskCard';
 import { ScanSourceAnalysisCard } from './components/ScanSourceAnalysisCard';
 import { ScanSummaryCard } from './components/ScanSummaryCard';
-import { useProjectScannerStore } from './hooks/useProjectScanner';
+import {
+  selectCanGenerateMigrationPlan,
+  selectScanReport,
+  useProjectScannerStore,
+} from './hooks/useProjectScanner';
 import type { ScanStatus } from './types/scanner.types';
 
 /**
@@ -48,20 +52,25 @@ export function ScannerScreen(): JSX.Element {
   const project = useSessionStore((s) => s.project);
 
   const status = useProjectScannerStore((s) => s.status);
-  const report = useProjectScannerStore((s) => s.report);
+  const report = useProjectScannerStore(selectScanReport);
   const error = useProjectScannerStore((s) => s.error);
   const scan = useProjectScannerStore((s) => s.scan);
   const reset = useProjectScannerStore((s) => s.reset);
+  const canGeneratePlan = useProjectScannerStore(selectCanGenerateMigrationPlan);
 
   const hasProject = project !== undefined;
   const canScan = hasProject && runtimeConfig.isTauri;
-  const canContinue = status === 'completed' && report !== undefined;
+  const canContinue =
+    status === 'completed' && report !== undefined && canGeneratePlan;
 
   const continueDisabledReason = !hasProject
     ? 'Select a project on the previous step before scanning.'
     : !runtimeConfig.isTauri
       ? 'The scanner requires the Migrate Pilot desktop shell.'
-      : undefined;
+      : status === 'completed' && report !== undefined && !canGeneratePlan
+        ? (report.react19ReadinessReport?.planGenerationExplanation ??
+          'Plan generation is blocked until React 19 migration eligibility is resolved.')
+        : undefined;
 
   return (
     <div className="flex h-full flex-col">

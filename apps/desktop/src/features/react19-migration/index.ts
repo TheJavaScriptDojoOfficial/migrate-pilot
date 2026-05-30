@@ -64,3 +64,21 @@ export type {
   React19PackageManifest,
   React19SourceSignals,
 } from './services/react19CompatibilityScanner';
+/* React 19 readiness report view model (R2 step 5) */
+export type {
+  React19ReadinessIssueItem,
+  React19ReadinessOverallStatus,
+  React19ReadinessPhaseCard,
+  React19ReadinessPhaseId,
+  React19ReadinessPhaseStatus,
+  React19ReadinessRecommendationItem,
+  React19ReadinessReportViewModel,
+  React19ReadinessRiskLevel,
+  React19ValidationCommandImportance,
+  React19ValidationCommandItem,
+} from './types/react19ReadinessReport.types';
+export {
+  buildReact19ReadinessReportViewModel,
+  resolveReact19PlanGenerationGate,
+} from './services/react19ReadinessReportViewModel';
+export type { React19ReadinessReportInput } from './services/react19ReadinessReportViewModel';

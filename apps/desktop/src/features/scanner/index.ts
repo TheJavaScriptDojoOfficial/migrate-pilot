@@ -12,6 +12,8 @@ export {
   selectScanIsReadyForPlan,
   selectScanReport,
   selectScanStatus,
+  selectReact19ReadinessReport,
+  selectCanGenerateMigrationPlan,
 } from './hooks/useProjectScanner';
 export {
   ScanDependencyCard,
