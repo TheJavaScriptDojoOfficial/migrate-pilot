@@ -5,7 +5,7 @@ import path from 'node:path';
 // Tauri uses a fixed port and expects strictPort. See https://tauri.app/start/frontend/vite/
 const host = process.env.TAURI_DEV_HOST;
 
-export default defineConfig(async () => ({
+export default defineConfig({
   plugins: [react()],
 
   clearScreen: false,
@@ -14,13 +14,15 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
-    hmr: host
+    ...(host
       ? {
-          protocol: 'ws',
-          host,
-          port: 1421,
+          hmr: {
+            protocol: 'ws' as const,
+            host,
+            port: 1421,
+          },
         }
-      : undefined,
+      : {}),
     watch: {
       // Tauri-managed code lives in src-tauri; ignore to avoid double-builds.
       ignored: ['**/src-tauri/**'],
@@ -45,4 +47,4 @@ export default defineConfig(async () => ({
     sourcemap: true,
     chunkSizeWarningLimit: 1024,
   },
-}));
+});

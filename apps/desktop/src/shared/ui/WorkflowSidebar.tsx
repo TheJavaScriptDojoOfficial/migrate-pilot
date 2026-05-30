@@ -1,54 +1,122 @@
 import { NavLink } from 'react-router-dom';
 
+import { Icon } from '@shared/ui/Icon';
 import { WORKFLOW_STEPS } from '@shared/constants/workflow';
 import { APP_TAGLINE } from '@shared/constants/app';
 import { cn } from '@shared/utils/cn';
 
 /**
- * Persistent left-rail workflow navigator.
+ * Persistent workflow navigator.
  *
- * Reads only route metadata - never holds session, log, or diff data.
- * Active state is computed by NavLink to keep this component cheap and
- * stable across re-renders elsewhere in the tree.
+ * Layout (DESIGN.md "IDE panels"):
+ *   - Header  — section label + tagline
+ *   - List    — numbered, icon-led nav items. Active item gets a left-edge
+ *               2px accent bar (per "Active States" in DESIGN.md) and a
+ *               raised tonal background.
+ *   - Footer  — context guardrails ("project is read-only") to keep the
+ *               user's mental model aligned with the orchestrator's safety
+ *               contract.
+ *
+ * This component reads only route metadata. It must never hold session,
+ * log, or diff data so it stays stable across re-renders elsewhere.
  */
 export function WorkflowSidebar(): JSX.Element {
   return (
     <aside
       aria-label="Migration workflow"
-      className="flex w-64 shrink-0 flex-col border-r border-canvas-border bg-canvas-subtle"
+      className="flex w-72 shrink-0 flex-col border-r border-canvas-border bg-canvas-subtle-2"
     >
-      <div className="border-b border-canvas-border px-4 py-3">
-        <p className="text-2xs uppercase tracking-widest text-ink-subtle">Workflow</p>
-        <p className="mt-1 text-xs text-ink-muted">{APP_TAGLINE}</p>
+      <div className="border-b border-canvas-border px-5 py-4">
+        <p className="text-2xs font-semibold uppercase tracking-[0.18em] text-ink-subtle">
+          Workflow
+        </p>
+        <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">{APP_TAGLINE}</p>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-2">
-        <ul className="space-y-0.5 px-2">
-          {WORKFLOW_STEPS.map((step) => (
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <ol className="flex flex-col gap-1">
+          {WORKFLOW_STEPS.map((step, idx) => (
             <li key={step.id}>
               <NavLink
                 to={step.path}
                 className={({ isActive }) =>
                   cn(
-                    'flex flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors',
+                    'group relative flex items-center gap-3 rounded-md py-2 pl-4 pr-3',
+                    'text-sm transition-colors duration-150 ease-out-quint',
+                    'focus-visible:outline-none focus-visible:shadow-focus',
                     isActive
-                      ? 'bg-canvas-raised text-ink ring-1 ring-canvas-border'
-                      : 'text-ink-muted hover:bg-canvas-raised hover:text-ink',
+                      ? 'bg-canvas-raised text-ink'
+                      : 'text-ink-muted hover:bg-canvas-raised/60 hover:text-ink',
                   )
                 }
               >
-                <span className="text-2xs uppercase tracking-wider text-ink-subtle">
-                  {step.shortLabel}
-                </span>
-                <span className="font-medium tracking-tight">{step.label}</span>
+                {({ isActive }) => (
+                  <>
+                    {/* Left-edge accent — DESIGN.md "Active States". */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'absolute inset-y-1.5 left-0 w-0.5 rounded-r-md transition-colors',
+                        isActive ? 'bg-accent' : 'bg-transparent',
+                      )}
+                    />
+
+                    {/* Step icon tile. */}
+                    <span
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border transition-colors',
+                        isActive
+                          ? 'border-accent/40 bg-accent/15 text-accent'
+                          : 'border-canvas-border bg-canvas-subtle text-ink-subtle group-hover:text-ink-muted',
+                      )}
+                    >
+                      <Icon name={step.icon} className="h-3.5 w-3.5" />
+                    </span>
+
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span
+                        className={cn(
+                          'text-2xs font-medium uppercase tracking-[0.12em]',
+                          isActive ? 'text-accent' : 'text-ink-subtle',
+                        )}
+                      >
+                        {step.shortLabel}
+                      </span>
+                      <span
+                        className={cn(
+                          'truncate text-xs font-medium tracking-tight',
+                          isActive ? 'text-ink' : 'text-ink-muted',
+                        )}
+                      >
+                        {step.label}
+                      </span>
+                    </span>
+
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'font-mono text-[10px] tabular-nums',
+                        isActive ? 'text-ink-subtle' : 'text-ink-faint',
+                      )}
+                    >
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                  </>
+                )}
               </NavLink>
             </li>
           ))}
-        </ul>
+        </ol>
       </nav>
 
-      <div className="border-t border-canvas-border px-4 py-3 text-2xs text-ink-subtle">
-        <p>Original project is read-only.</p>
+      <div className="border-t border-canvas-border bg-canvas px-5 py-3 text-2xs leading-relaxed text-ink-subtle">
+        <p className="flex items-center gap-1.5 text-ink-muted">
+          <Icon name="shield" className="h-3 w-3 text-success" />
+          <span className="font-medium uppercase tracking-[0.12em] text-ink-subtle">
+            Safety contract
+          </span>
+        </p>
+        <p className="mt-1.5">Original project is read-only.</p>
         <p>All edits live in a Git worktree.</p>
       </div>
     </aside>
