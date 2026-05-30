@@ -18,10 +18,40 @@ import type { ScanReport } from '@shared/types/scanReport';
 import type { ValidationResult } from '@shared/types/validationResult';
 import type { GitWorkspace } from '@shared/types/gitWorkspace';
 
+/**
+ * Raw payload returned by the read-only `project_read_metadata` Tauri
+ * command. The shape mirrors `ReadMetadataOutput` in `commands/project.rs`
+ * exactly. The UI never consumes this directly — the
+ * `projectMetadataService` parses it into the strongly-typed
+ * `ProjectMetadata` exposed by the project-selection feature.
+ */
+export interface ProjectReadMetadataRaw {
+  readonly path: string;
+  readonly folderName: string;
+  readonly packageJsonText: string | null;
+  readonly lockFiles: {
+    readonly npm: boolean;
+    readonly yarn: boolean;
+    readonly pnpm: boolean;
+    readonly bun: boolean;
+  };
+  readonly tsconfigPresent: boolean;
+  readonly isGitRepository: boolean;
+  readonly currentBranch: string | null;
+}
+
 export interface CommandPayloads {
   project_select: {
     input: { suggestedPath?: string };
     output: Project;
+  };
+  project_pick_folder: {
+    input: Record<string, never>;
+    output: { path: string | null };
+  };
+  project_read_metadata: {
+    input: { path: string };
+    output: ProjectReadMetadataRaw;
   };
   scan_start: {
     input: { projectId: string };

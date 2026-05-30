@@ -4,6 +4,7 @@
   "description": "Baseline capability set granted to the main app window. All Tauri commands exposed to the UI must also be allowlisted explicitly in `src/commands/mod.rs`.",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default"
   ]
 }
