@@ -243,8 +243,8 @@ export function ExecutionScreen(): JSX.Element {
                 {...(workspaceResult.branchName !== undefined
                   ? { branchName: workspaceResult.branchName }
                   : {})}
-                planTitle={plan.summary.title}
-                planTotalSteps={plan.summary.totalSteps}
+                planTitle={plan.title}
+                planTotalSteps={plan.steps.length}
               />
 
               {engineError !== undefined && status !== 'failed' ? (

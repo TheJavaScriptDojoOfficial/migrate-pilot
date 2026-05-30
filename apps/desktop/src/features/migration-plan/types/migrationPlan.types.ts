@@ -1,98 +1,29 @@
-/**
- * Milestone 4 — Migration Plan types.
- *
- * Why these live in the feature folder (and not `shared/types/`):
- *   `shared/types/migrationStep.ts` is an older sketch reserved for the
- *   orchestrator/execution layer (carries `sessionId`, `commitSha`,
- *   `targetFiles`, etc.). The Milestone 4 plan is a deterministic, in-memory,
- *   rule-based artifact produced from a ScanReport. Keeping its types feature-
- *   local keeps the planner self-contained and safe to evolve without
- *   destabilising the eventual execution-layer contracts.
- */
-import type { ScanReport, ScanRiskLevel } from '@features/scanner';
+import type { ScanReport } from '@features/scanner';
+import type {
+  React19ExecutionCapability,
+  React19MigrationPhase,
+  React19MigrationRiskLevel,
+  ReactMigrationTrack,
+} from '@features/react19-migration';
 
-/* -------------------------------------------------------------------------- */
-/* State machine                                                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Lifecycle of the plan generation flow.
- *
- *   idle        → no plan generated yet for the current ScanReport
- *   generating  → generator is running (deterministic; usually <50ms)
- *   generated   → a draft plan exists and is awaiting human approval
- *   approved    → the user has approved the plan; downstream steps unlock
- *   failed      → generation hit an unrecoverable error (very rare for the
- *                 rule-based generator; reserved for guardrail violations)
- */
 export type MigrationPlanStatus =
   | 'idle'
   | 'generating'
-  | 'generated'
-  | 'approved'
-  | 'failed';
+  | 'ready'
+  | 'blocked'
+  | 'error'
+  | 'approved';
 
-/**
- * Per-step lifecycle. Note this is *plan-time* status, not execution status —
- * the execution engine will track its own state later.
- */
-export type MigrationStepStatus =
-  | 'pending'
-  | 'approved'
-  | 'skipped'
-  | 'blocked';
+export type React19PlanStepStatus = 'pending' | 'skipped' | 'blocked';
+export type MigrationStepStatus = React19PlanStepStatus;
 
-/** Risk classification of an individual plan step. */
-export type MigrationStepRisk = 'low' | 'medium' | 'high';
+export type React19PlanStepExecutionType =
+  | 'scriptable'
+  | 'codemod'
+  | 'ai-assisted'
+  | 'manual'
+  | 'validation-only';
 
-/**
- * Category drives icon, color and grouping. The union is exhaustively
- * switched everywhere — add new values here when the planner grows.
- */
-export type MigrationStepCategory =
-  | 'workspace'
-  | 'dependency'
-  | 'config'
-  | 'typescript'
-  | 'source'
-  | 'component'
-  | 'routing'
-  | 'state-management'
-  | 'testing'
-  | 'validation'
-  | 'report';
-
-/** Coarse complexity bucket inherited from the ScanReport. */
-export type MigrationPlanComplexity = 'small' | 'medium' | 'large';
-
-/* -------------------------------------------------------------------------- */
-/* Plan + Step                                                                */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Execution intent declared by the planner for a migration step.
- *
- * The planner describes *what kind of work* the step represents and, for
- * scripted work, which generic executor should handle it. The execution
- * engine never inspects step ids — it dispatches purely on
- * {@link mode} + {@link executorKey}.
- *
- *   - `scripted`   → safe, deterministic, registered executor
- *                    (e.g. `package-json-dependency-update`).
- *   - `ai`         → requires AI source transformation (not implemented yet).
- *   - `manual`     → must be performed by a human (review, decision, etc.).
- *   - `validation` → only validation commands run, no source mutation.
- *
- * Future executor keys (illustrative, NOT implemented yet):
- *
- *   - `package-json-dependency-update`   ← only one shipped today
- *   - `tsconfig-update`
- *   - `file-create-or-update`
- *   - `codemod-react-class-to-function`
- *   - `react-router-modernization`
- *   - `ai-source-transform`
- *   - `manual-review`
- */
 export type MigrationStepExecutionMode =
   | 'scripted'
   | 'ai'
@@ -101,144 +32,128 @@ export type MigrationStepExecutionMode =
 
 export interface MigrationStepExecution {
   readonly mode: MigrationStepExecutionMode;
-  /**
-   * Stable identifier of the generic executor that handles this step.
-   * Required when `mode === 'scripted'`, optional otherwise (an AI / manual
-   * step may still hint at the future executor that will own it).
-   */
   readonly executorKey?: string;
-  /**
-   * Free-form executor parameters. Each executor defines its own params
-   * schema (see the executor registry for the safe param contracts).
-   * Keep this `unknown` here — narrowing happens inside the executor.
-   */
   readonly params?: Readonly<Record<string, unknown>>;
 }
 
-export interface MigrationStep {
+export type MigrationStepRisk = React19MigrationRiskLevel;
+export type MigrationStepCategory =
+  | 'preflight'
+  | 'validation'
+  | 'bridge'
+  | 'dependency'
+  | 'tooling'
+  | 'typescript'
+  | 'api'
+  | 'routing'
+  | 'testing';
+
+export interface React19PlanStep {
   readonly id: string;
-  /** 1-indexed position within the plan. Stable for the lifetime of the plan. */
   readonly order: number;
   readonly title: string;
   readonly description: string;
-  readonly category: MigrationStepCategory;
-  readonly risk: MigrationStepRisk;
-  readonly status: MigrationStepStatus;
-  /** A required step cannot be skipped; the user must address it (or abort). */
-  readonly required: boolean;
-  /** True when this step must not auto-execute without explicit human ack. */
-  readonly approvalRequired: boolean;
-  /** Short rationale visible in the UI. Always explains *why*. */
+  readonly phase: React19MigrationPhase;
+  readonly track: ReactMigrationTrack;
+  readonly riskLevel: React19MigrationRiskLevel;
+  readonly executionType: React19PlanStepExecutionType;
+  readonly status: React19PlanStepStatus;
   readonly reason: string;
-  /** Likely files or areas affected. Always heuristic. */
-  readonly expectedFiles?: readonly string[];
-  /** Coarse modules / areas the step touches (e.g. "components/", "routing"). */
+  readonly category: MigrationStepCategory;
+  readonly risk: React19MigrationRiskLevel;
+  readonly sourceIssueCodes: readonly string[];
+  readonly relatedRecommendationIds: readonly string[];
+  readonly expectedChangeScope: readonly string[];
   readonly expectedAreas?: readonly string[];
-  /** Suggested validation commands to run after this step. */
-  readonly validationCommands?: readonly string[];
-  /** Ordered ids of steps that must complete first. */
+  readonly expectedFiles?: readonly string[];
+  readonly validationCommands: readonly string[];
   readonly dependsOn?: readonly string[];
-  /**
-   * Optional execution metadata. Steps without this field are treated as
-   * "missing execution metadata" by the execution engine (no run button).
-   * Adding metadata is how a step opts into the generic execution
-   * framework — the step id is never used to decide executability.
-   */
+  readonly required: boolean;
+  readonly approvalRequired: boolean;
+  readonly requiresHumanReview: boolean;
+  readonly blocksUpgrade?: boolean;
+  readonly canRunInExecution?: boolean;
+  readonly executionCapability?: React19ExecutionCapability;
   readonly execution?: MigrationStepExecution;
 }
 
-/**
- * Headline summary surfaced at the top of the plan review.
- *
- * Derived from the steps array, not stored separately. The generator fills
- * these fields once at build time so the UI does not have to recompute
- * aggregates on every render.
- */
-export interface MigrationPlanSummary {
-  readonly title: string;
-  readonly description: string;
-  readonly totalSteps: number;
-  readonly estimatedRisk: MigrationStepRisk;
-  readonly estimatedComplexity: MigrationPlanComplexity;
-  /** Number of steps requiring explicit human approval (high-risk gates). */
-  readonly approvalGates: number;
-  /** Number of required (non-optional) steps. */
-  readonly requiredSteps: number;
+export type MigrationStep = React19PlanStep;
+
+export interface React19ValidationStrategy {
+  readonly baselineCommands: readonly string[];
+  readonly perStepCommands: readonly string[];
+  readonly finalCommands: readonly string[];
+  readonly missingCommands: readonly string[];
 }
 
-/**
- * Strategy keyword. Reserved for future fan-out (e.g. `screen-flow-first`).
- * V1 only generates the foundation-first strategy.
- */
-export type MigrationPlanStrategy = 'foundation-first';
+export interface React19PlanPhaseSummary {
+  readonly totalSteps: number;
+  readonly highestRisk: React19MigrationRiskLevel;
+  readonly executionTypes: readonly React19PlanStepExecutionType[];
+}
 
-/** Public lifecycle of a generated plan persisted to the store. */
-export type MigrationPlanLifecycle = 'draft' | 'approved';
-
-export interface MigrationPlan {
+export interface React19MigrationPlanV2 {
   readonly id: string;
-  /** Links the plan back to the ScanReport it was generated from. */
+  readonly version: 'react19-plan-v2';
   readonly scanReportId: string;
   readonly projectPath: string;
+  readonly title: string;
+  readonly summaryText: string;
+  readonly sourceReactVersion: string;
+  readonly targetReactVersion: '19';
+  readonly sourceMajor: 16 | 17 | 18;
+  readonly track: ReactMigrationTrack;
+  readonly strategy: 'react-19-foundation-first';
   readonly generatedAt: string;
-  readonly strategy: MigrationPlanStrategy;
-  readonly status: MigrationPlanLifecycle;
-  /** ISO timestamp the user approved the plan. */
   readonly approvedAt?: string;
-  readonly summary: MigrationPlanSummary;
-  readonly steps: readonly MigrationStep[];
-  /** Working assumptions the generator made (e.g. "package manager is npm"). */
-  readonly assumptions: readonly string[];
-  /** Hard blockers surfaced by the generator that should be addressed first. */
+  readonly status: 'draft' | 'approved';
+  readonly canExecute: boolean;
+  readonly blockedReasons: readonly string[];
+  readonly prerequisites: readonly string[];
+  readonly steps: readonly React19PlanStep[];
+  readonly skippedPhases: readonly {
+    phase: React19MigrationPhase;
+    reason: string;
+  }[];
+  readonly phaseSummary: Readonly<Record<React19MigrationPhase, React19PlanPhaseSummary>>;
+  readonly validationStrategy: React19ValidationStrategy;
+  readonly highestRisk: React19MigrationRiskLevel;
+  readonly summary: {
+    readonly title: string;
+    readonly description: string;
+    readonly totalSteps: number;
+    readonly estimatedRisk: React19MigrationRiskLevel;
+    readonly estimatedComplexity: 'small' | 'medium' | 'large';
+    readonly approvalGates: number;
+    readonly requiredSteps: number;
+  };
   readonly blockers: readonly string[];
-  /** Soft warnings that do not block plan approval. */
   readonly warnings: readonly string[];
-  /** Generator-side recommendations (distinct from scanner recommendations). */
+  readonly assumptions: readonly string[];
   readonly recommendations: readonly string[];
 }
 
-/* -------------------------------------------------------------------------- */
-/* Errors                                                                     */
-/* -------------------------------------------------------------------------- */
+export type MigrationPlan = React19MigrationPlanV2;
 
 export type MigrationPlanErrorKind =
   | 'no-scan-report'
   | 'scan-incomplete'
-  | 'generator-failed';
+  | 'generator-failed'
+  | 'plan-blocked';
 
 export interface MigrationPlanError {
   readonly kind: MigrationPlanErrorKind;
   readonly message: string;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Generator input                                                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The deterministic generator only depends on a finished ScanReport.
- * Extracted as its own interface so the generator service can be tested
- * with hand-built fixtures (no scanner/IPC required).
- */
 export interface MigrationPlanGeneratorInput {
   readonly scanReport: ScanReport;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Store-shaped state                                                         */
-/* -------------------------------------------------------------------------- */
 
 export interface MigrationPlanState {
   readonly status: MigrationPlanStatus;
   readonly plan?: MigrationPlan;
   readonly error?: MigrationPlanError;
-  /**
-   * Captured at generation time so we can detect when the upstream ScanReport
-   * has changed (and consequently invalidate the plan).
-   */
+  readonly approved: boolean;
   readonly scanReportId?: string;
 }
-
-/* Re-export the scanner risk level alias so external callers can map the
- * plan-level estimated risk to scanner level without crossing layers. */
-export type { ScanRiskLevel };

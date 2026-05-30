@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Badge } from '@shared/ui/Badge';
+import { Badge, type BadgeTone } from '@shared/ui/Badge';
 import { Button } from '@shared/ui/Button';
 import {
   Card,
@@ -18,7 +18,7 @@ import { StatusIndicator } from '@shared/ui/StatusIndicator';
 import { StepEyebrow } from '@shared/ui/StepEyebrow';
 import { ROUTES } from '@shared/constants/routes';
 
-import { resolveReact19PlanGenerationGate } from '@features/react19-migration';
+import { REACT19_PHASE_DISPLAY_NAMES, resolveReact19PlanGenerationGate } from '@features/react19-migration';
 import {
   selectScanReport,
   selectScanStatus,
@@ -27,11 +27,6 @@ import {
 } from '@features/scanner';
 
 import { MigrationPlanActionBar } from './components/MigrationPlanActionBar';
-import { MigrationPlanEmptyState } from './components/MigrationPlanEmptyState';
-import { MigrationPlanRecommendations } from './components/MigrationPlanRecommendations';
-import { MigrationPlanRiskPanel } from './components/MigrationPlanRiskPanel';
-import { MigrationPlanStepList } from './components/MigrationPlanStepList';
-import { MigrationPlanSummaryCard } from './components/MigrationPlanSummaryCard';
 import {
   PLAN_STATUS_KIND,
   PLAN_STATUS_LABEL,
@@ -43,23 +38,6 @@ import {
   useMigrationPlanStore,
 } from './hooks/useMigrationPlan';
 
-/**
- * Step 4 — Migration Plan (Milestone 4).
- *
- * Owns the plan state machine for the workflow:
- *
- *   no scan report     → blocked empty state; CTA back to scanner
- *   scan ready, idle   → "Generate Migration Plan" CTA + scan summary card
- *   generating         → short loading state (no fake AI wording)
- *   generated (draft)  → summary + steps + risks + recommendations + approve CTA
- *   approved           → same view, locked + "Continue to Workspace" CTA
- *   failed             → error message + retry action
- *
- * UX rules:
- *   - Approval is explicit; the screen never auto-navigates after approval.
- *   - When the upstream ScanReport changes (or is reset), any existing plan
- *     is invalidated and the user is forced to re-generate.
- */
 export function MigrationPlanScreen(): JSX.Element {
   const navigate = useNavigate();
 
@@ -77,40 +55,49 @@ export function MigrationPlanScreen(): JSX.Element {
   );
 
   const hasScanReport = scanStatus === 'completed' && scanReport !== undefined;
-  const isApproved = planStatus === 'approved';
-  const isDraft = planStatus === 'generated';
-
-  // R2 step 5 — plan generation gate via shared readiness view-model logic.
   const planGate =
     scanReport !== undefined
       ? resolveReact19PlanGenerationGate(scanReport)
       : undefined;
-  const isPlanGenerationGated = planGate !== undefined && !planGate.canGeneratePlan;
-  const gateReason = planGate?.reasons[0] ?? planGate?.explanation;
+  const gateBlocked = planGate !== undefined && !planGate.canGeneratePlan;
 
-  // Invalidate the plan if the upstream ScanReport changes. This effect
-  // is the single source of truth for the cross-store invariant: a plan is
-  // only valid for the ScanReport id it was generated from.
   useEffect(() => {
     clearPlanIfScanChanges(scanReport?.id);
   }, [scanReport?.id, clearPlanIfScanChanges]);
 
-  const canGenerate =
-    hasScanReport && planStatus !== 'generating' && !isPlanGenerationGated;
-  const canApprove = isDraft && plan !== undefined;
-  const canContinue = isApproved;
+  const executableSteps =
+    plan?.steps.filter((step) => step.status === 'pending' && step.canRunInExecution !== false) ?? [];
+  const canApprove =
+    planStatus === 'ready' &&
+    plan !== undefined &&
+    plan.canExecute &&
+    executableSteps.length > 0 &&
+    !gateBlocked;
+  const canContinue = planStatus === 'approved';
+  const canGenerate = hasScanReport && planStatus !== 'generating' && !gateBlocked;
 
   return (
     <div className="flex h-full flex-col">
       <PageHeader
         eyebrow={<StepEyebrow number={4} icon="plan" label="Plan" />}
         title="React 19 migration plan"
-        subtitle="Deterministic, rule-based React 19 migration plan generated from the compatibility scan. Review the steps below, then approve to unlock workspace creation."
+        subtitle="Generate a deterministic React 19 migration plan from scan context, risk engine phases, and validation capabilities. Review and approve to continue to workspace setup."
         meta={
-          <HeaderMeta
-            planStatus={planStatus}
-            hasScanReport={hasScanReport}
-          />
+          <>
+            <Badge tone="success" variant="soft" withDot>
+              React 19 specific
+            </Badge>
+            <StatusIndicator
+              variant="chip"
+              status={PLAN_STATUS_KIND[planStatus]}
+              label={PLAN_STATUS_LABEL[planStatus]}
+            />
+            {!hasScanReport ? (
+              <Badge tone="warning" variant="soft" withDot>
+                Scan required
+              </Badge>
+            ) : null}
+          </>
         }
         actions={
           <MigrationPlanActionBar
@@ -122,28 +109,27 @@ export function MigrationPlanScreen(): JSX.Element {
               ? {}
               : {
                   disabledGenerateReason: !hasScanReport
-                    ? 'A completed scan report is required to generate a plan.'
-                    : isPlanGenerationGated
-                      ? (gateReason ??
-                        'Plan generation is blocked because this project is not eligible for the React 19 migration pilot.')
-                      : 'Plan generation is already in progress.',
+                    ? 'A completed scan report is required.'
+                    : gateBlocked
+                      ? (planGate?.reasons[0] ?? planGate?.explanation)
+                      : 'Generation is already in progress.',
                 })}
             {...(canApprove
               ? {}
               : {
                   disabledApproveReason: !hasScanReport
-                    ? 'Run the scanner first.'
-                    : planStatus === 'idle'
-                      ? 'Generate the plan before approving.'
-                      : isApproved
-                        ? 'Plan is already approved.'
-                        : 'Plan must be generated and ready before approval.',
+                    ? 'Run scan first.'
+                    : gateBlocked
+                      ? 'React 19 eligibility gate blocks plan approval.'
+                      : planStatus === 'blocked'
+                        ? 'Plan is blocked. Resolve blocked reasons first.'
+                        : 'Plan must be ready and executable before approval.',
                 })}
             {...(canContinue
               ? {}
               : {
                   disabledContinueReason:
-                    'Approve the plan to unlock the workspace step.',
+                    'Approve the plan to continue to Step 05 Workspace.',
                 })}
             onGenerate={() => {
               if (scanReport !== undefined) {
@@ -158,35 +144,55 @@ export function MigrationPlanScreen(): JSX.Element {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6">
           {!hasScanReport ? (
-            <MigrationPlanEmptyState
-              onGoToScanner={() => navigate(ROUTES.scanner)}
+            <EmptyState
+              icon="plan"
+              fullWidth
+              title="Run a project scan before generating a React 19 migration plan."
+              description="Step 04 relies on the completed scan report, React 19 migration context, and risk engine output."
+              action={
+                <Button
+                  variant="secondary"
+                  size="md"
+                  leadingIcon={<Icon name="scan" />}
+                  onClick={() => navigate(ROUTES.scanner)}
+                >
+                  Go to scanner
+                </Button>
+              }
             />
-          ) : isPlanGenerationGated && planGate !== undefined ? (
-            <BlockedByEligibilityState
+          ) : gateBlocked && planGate !== undefined ? (
+            <BlockedGateState
               planGate={planGate}
               scanReport={scanReport}
               onGoToScanner={() => navigate(ROUTES.scanner)}
             />
           ) : planStatus === 'idle' ? (
-            <IdleState
+            <IdlePlanState
               projectName={scanReport.projectInfo.name}
               onGenerate={() => void generatePlan(scanReport)}
             />
           ) : planStatus === 'generating' ? (
-            <GeneratingState />
-          ) : planStatus === 'failed' ? (
-            <FailedState
-              message={planError?.message ?? 'Plan generation failed for an unknown reason.'}
-              onRetry={() => void generatePlan(scanReport)}
+            <GeneratingPlanState />
+          ) : planStatus === 'error' ? (
+            <ErrorMessage
+              title="React 19 plan generation failed"
+              message={planError?.message ?? 'Unknown planner error.'}
             />
-          ) : (planStatus === 'generated' || planStatus === 'approved') &&
-            plan !== undefined ? (
-            <GeneratedView
-              isApproved={planStatus === 'approved'}
-              plan={plan}
-            />
+          ) : plan !== undefined ? (
+            <>
+              <PlanHeaderCard
+                plan={plan}
+                planStatus={planStatus}
+                executableStepCount={executableSteps.length}
+              />
+              <PlanSummaryCard plan={plan} />
+              <PhaseBreakdownCard plan={plan} />
+              <PlanStepsCard plan={plan} />
+              <SkippedPhasesCard plan={plan} />
+              <BlockedReasonsCard plan={plan} />
+            </>
           ) : null}
         </div>
       </div>
@@ -194,74 +200,58 @@ export function MigrationPlanScreen(): JSX.Element {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* states                                                                     */
-/* -------------------------------------------------------------------------- */
-
-interface IdleStateProps {
+function IdlePlanState({
+  projectName,
+  onGenerate,
+}: {
   readonly projectName: string;
   readonly onGenerate: () => void;
-}
-
-function IdleState({ projectName, onGenerate }: IdleStateProps): JSX.Element {
+}): JSX.Element {
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Ready to generate the React 19 migration plan</CardTitle>
-            <CardDescription>
-              React 19 compatibility scan complete for{' '}
-              <span className="font-semibold text-ink">{projectName}</span>. Generating
-              the plan reads the scan report and emits a deterministic, rule-based
-              React 19 migration plan tailored to this project.
-            </CardDescription>
-          </div>
-          <Badge tone="success" variant="soft" withDot>
-            Read-only — no AI, no installs
-          </Badge>
-        </CardHeader>
-
-        <CardSection>
-          <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
-            <Bullet>Foundation-first, React-major-aware strategy.</Bullet>
-            <Bullet>Each step has explicit risk, category, and rationale.</Bullet>
-            <Bullet>Validation commands come from your package.json scripts.</Bullet>
-            <Bullet>Approval is required before workspace creation.</Bullet>
-          </ul>
-        </CardSection>
-
-        <div className="mt-4 flex flex-col items-start gap-3">
-          <p className="text-xs leading-relaxed text-ink-muted">
-            React 19 plan generation is local and deterministic. No AI provider is
-            contacted, no file is modified, and no command is executed. This screen
-            is the human checkpoint between analysis and any project mutation.
-          </p>
-          <Button
-            size="md"
-            leadingIcon={<Icon name="plan" />}
-            onClick={onGenerate}
-          >
-            Generate React 19 migration plan
-          </Button>
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Generate React 19 migration plan V2</CardTitle>
+          <CardDescription>
+            Scan completed for <span className="font-semibold text-ink">{projectName}</span>. Generate a track-aware React 19 plan using migration context + risk engine phases + validation capabilities.
+          </CardDescription>
         </div>
-      </Card>
-
-      <PlanGuide />
-    </>
+        <Badge tone="success" variant="soft" withDot>
+          Deterministic
+        </Badge>
+      </CardHeader>
+      <CardSection>
+        <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
+          <li>Includes source major, track, phase strategy, and validation strategy.</li>
+          <li>Uses `react19RiskEngine.items/byPhase/summary` for step generation.</li>
+          <li>React 16/17 includes bridge; React 18 bridge is skipped with reason.</li>
+          <li>No workspace-creation executable step in this plan.</li>
+        </ul>
+      </CardSection>
+      <Button size="md" leadingIcon={<Icon name="plan" />} onClick={onGenerate}>
+        Generate React 19 migration plan
+      </Button>
+    </Card>
   );
 }
 
-/**
- * Rendered when the scanner has completed but the project's React 19
- * support status forbids plan generation (missing package.json, no
- * package manager, unsupported React major, unparseable versions, etc.).
- *
- * The screen never tries to "soften" the block — the planner is a
- * one-way gate and we want the user to fix the underlying issue and
- * re-run the scan rather than chase a phantom plan.
- */
-function BlockedByEligibilityState({
+function GeneratingPlanState(): JSX.Element {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Generating React 19 plan</CardTitle>
+          <CardDescription>
+            Building phase-ordered steps from migration context and risk engine output.
+          </CardDescription>
+        </div>
+        <StatusIndicator status="running" label="Generating" variant="chip" />
+      </CardHeader>
+    </Card>
+  );
+}
+
+function BlockedGateState({
   planGate,
   scanReport,
   onGoToScanner,
@@ -270,77 +260,40 @@ function BlockedByEligibilityState({
   readonly scanReport: ScanReport;
   readonly onGoToScanner: () => void;
 }): JSX.Element {
-  const status = scanReport.react19SupportStatus;
-  const primaryReason = planGate.reasons[0] ?? planGate.explanation;
-  const tone = 'danger';
-  const title = 'React 19 migration plan is blocked';
   return (
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle>React 19 plan generation is blocked</CardTitle>
           <CardDescription>
-            Plan generation is gated by the deterministic React 19
-            eligibility check from the readiness report. Fix the
-            underlying issue and re-run the scan to unlock the plan.
+            The shared React 19 eligibility gate rejected this scan report. No fallback generic modernization plan is generated.
           </CardDescription>
         </div>
-        <Badge tone={tone} variant="soft" withDot uppercase>
+        <Badge tone="danger" variant="soft" withDot uppercase>
           Blocked
         </Badge>
       </CardHeader>
       <CardSection>
-        <p className="rounded-md border border-canvas-border bg-canvas-overlay px-3 py-2 text-xs leading-relaxed text-ink">
-          {primaryReason}
-        </p>
-        {planGate.reasons.length > 1 ? (
-          <ul className="mt-3 space-y-1.5">
-            {planGate.reasons.slice(1).map((reason) => (
-              <li
-                key={reason}
-                className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger"
-              >
-                {reason}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </CardSection>
-      <CardSection label="Detected">
-        <ul className="grid gap-1 text-xs text-ink-muted sm:grid-cols-2">
-          <DetectedRow
-            label="react"
-            value={
-              status?.sourceReactVersion ??
-              scanReport.dependencies.reactVersion ??
-              'not detected'
-            }
-          />
-          <DetectedRow
-            label="react-dom"
-            value={
-              status?.reactDomVersion ??
-              scanReport.dependencies.reactDomVersion ??
-              'not detected'
-            }
-          />
-          <DetectedRow
-            label="React major"
-            value={
-              status?.sourceReactMajor !== undefined
-                ? `React ${status.sourceReactMajor}`
-                : scanReport.dependencies.reactMajor !== undefined
-                  ? `React ${scanReport.dependencies.reactMajor}`
-                  : '—'
-            }
-          />
-          <DetectedRow
-            label="Package manager"
-            value={status?.packageManager ?? scanReport.dependencies.packageManager}
-          />
+        <ul className="space-y-2">
+          {planGate.reasons.map((reason) => (
+            <li
+              key={reason}
+              className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger"
+            >
+              {reason}
+            </li>
+          ))}
         </ul>
       </CardSection>
-      <div className="mt-4 flex items-center gap-2">
+      <CardSection label="Detected context">
+        <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
+          <li>react: {scanReport.dependencies.reactVersion ?? 'not detected'}</li>
+          <li>react-dom: {scanReport.dependencies.reactDomVersion ?? 'not detected'}</li>
+          <li>major: {scanReport.dependencies.reactMajor ?? 'unknown'}</li>
+          <li>package manager: {scanReport.dependencies.packageManager}</li>
+        </ul>
+      </CardSection>
+      <div className="flex items-center gap-2">
         <Button
           variant="secondary"
           size="md"
@@ -349,15 +302,285 @@ function BlockedByEligibilityState({
         >
           Back to scanner
         </Button>
-        <span className="text-2xs text-ink-subtle">
-          Plan generation stays disabled until {`canGeneratePlan`} is true.
-        </span>
       </div>
     </Card>
   );
 }
 
-function DetectedRow({
+function PlanHeaderCard({
+  plan,
+  planStatus,
+  executableStepCount,
+}: {
+  readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
+  readonly planStatus: ReturnType<typeof useMigrationPlanStore.getState>['status'];
+  readonly executableStepCount: number;
+}): JSX.Element {
+  const statusTone: BadgeTone =
+    planStatus === 'approved'
+      ? 'success'
+      : planStatus === 'blocked'
+        ? 'danger'
+        : 'info';
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>React 19 Migration Plan</CardTitle>
+          <CardDescription>{plan.summaryText}</CardDescription>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge tone={statusTone} variant="soft" withDot uppercase>
+            {planStatus}
+          </Badge>
+          <Badge tone="neutral" variant="outline">
+            Source {plan.sourceReactVersion}
+          </Badge>
+          <Badge tone="neutral" variant="outline">
+            Target {plan.targetReactVersion}
+          </Badge>
+          <Badge tone="accent" variant="soft">
+            {plan.track}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardSection>
+        <div className="grid gap-3 text-xs sm:grid-cols-3">
+          <Stat label="Strategy" value="React 19 foundation-first" />
+          <Stat label="Total steps" value={`${plan.steps.length}`} />
+          <Stat label="Executable steps" value={`${executableStepCount}`} />
+          <Stat label="Highest risk" value={plan.highestRisk} />
+          <Stat label="Source major" value={`${plan.sourceMajor}`} />
+          <Stat label="Plan status" value={plan.canExecute ? 'ready' : 'blocked'} />
+        </div>
+      </CardSection>
+    </Card>
+  );
+}
+
+function PlanSummaryCard({
+  plan,
+}: {
+  readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
+}): JSX.Element {
+  const bridgeSkip = plan.skippedPhases.find((phase) => phase.phase === 'react-bridge');
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Plan summary</CardTitle>
+          <CardDescription>
+            Why this plan exists, what data generated it, and how validation gates are attached.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardSection>
+        <ul className="space-y-2 text-xs text-ink-muted">
+          <li>
+            Generated from `scanReport.react19MigrationContext` + `react19RiskEngine.items/byPhase/summary`.
+          </li>
+          <li>
+            Bridge handling:{' '}
+            {bridgeSkip === undefined
+              ? 'React 18 bridge is required before full React 19 upgrade.'
+              : bridgeSkip.reason}
+          </li>
+          <li>
+            Validation strategy: baseline ({plan.validationStrategy.baselineCommands.length}),
+            per-step ({plan.validationStrategy.perStepCommands.length}), final ({plan.validationStrategy.finalCommands.length}).
+          </li>
+          <li>
+            Missing validation commands: {plan.validationStrategy.missingCommands.join(', ') || 'none'}.
+          </li>
+        </ul>
+      </CardSection>
+    </Card>
+  );
+}
+
+function PhaseBreakdownCard({
+  plan,
+}: {
+  readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
+}): JSX.Element {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Phase breakdown</CardTitle>
+          <CardDescription>Planner V2 groups steps by React 19 migration phase.</CardDescription>
+        </div>
+      </CardHeader>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {(Object.keys(plan.phaseSummary) as Array<keyof typeof plan.phaseSummary>).map((phase) => {
+          const phaseSummary = plan.phaseSummary[phase];
+          const status =
+            phaseSummary.totalSteps === 0 ? 'skipped' : phaseSummary.highestRisk === 'blocker' ? 'blocked' : 'ready';
+          return (
+            <div
+              key={phase}
+              className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-3 py-2"
+            >
+              <p className="text-xs font-semibold text-ink">
+                {REACT19_PHASE_DISPLAY_NAMES[phase]}
+              </p>
+              <p className="mt-1 text-2xs text-ink-subtle">
+                Steps: {phaseSummary.totalSteps} · Highest risk: {phaseSummary.highestRisk}
+              </p>
+              <p className="mt-1 text-2xs text-ink-subtle">
+                Execution: {phaseSummary.executionTypes.join(', ') || 'n/a'}
+              </p>
+              <Badge
+                tone={status === 'blocked' ? 'danger' : status === 'ready' ? 'success' : 'neutral'}
+                variant="soft"
+                className="mt-2"
+                uppercase
+              >
+                {status}
+              </Badge>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function PlanStepsCard({
+  plan,
+}: {
+  readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
+}): JSX.Element {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Plan steps</CardTitle>
+          <CardDescription>
+            Ordered executable and prerequisite steps generated from risk engine evidence.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      {plan.steps.length === 0 ? (
+        <p className="text-xs text-ink-muted">No steps were generated.</p>
+      ) : (
+        <ol className="space-y-3">
+          {plan.steps.map((step) => (
+            <li
+              key={step.id}
+              className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-4 py-3"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="neutral" variant="outline" className="font-mono">
+                  {String(step.order).padStart(2, '0')}
+                </Badge>
+                <p className="text-xs font-semibold text-ink">{step.title}</p>
+                <Badge tone={riskTone(step.riskLevel)} variant="soft" withDot uppercase>
+                  {step.riskLevel}
+                </Badge>
+                <Badge tone="neutral" variant="outline">
+                  {REACT19_PHASE_DISPLAY_NAMES[step.phase]}
+                </Badge>
+                <Badge tone="neutral" variant="outline">
+                  {step.track}
+                </Badge>
+                <Badge tone="info" variant="outline">
+                  {step.executionType}
+                </Badge>
+                <Badge
+                  tone={step.requiresHumanReview ? 'warning' : 'success'}
+                  variant="soft"
+                  uppercase
+                >
+                  {step.requiresHumanReview ? 'Human review' : 'Auto-review'}
+                </Badge>
+              </div>
+              <p className="mt-2 text-xs text-ink-muted">{step.description}</p>
+              <p className="mt-2 text-2xs text-ink-subtle">
+                Reason: {step.reason}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {step.validationCommands.map((command) => (
+                  <Badge key={command} tone="info" variant="soft" className="font-mono">
+                    {command}
+                  </Badge>
+                ))}
+              </div>
+              <div className="mt-2 text-2xs text-ink-subtle">
+                Issue codes: {step.sourceIssueCodes.join(', ') || 'none'}
+              </div>
+              <div className="mt-1 text-2xs text-ink-subtle">
+                Change scope: {step.expectedChangeScope.join(' · ') || 'n/a'}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Card>
+  );
+}
+
+function SkippedPhasesCard({
+  plan,
+}: {
+  readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
+}): JSX.Element | null {
+  if (plan.skippedPhases.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Skipped phases</CardTitle>
+          <CardDescription>Planner V2 records non-required phases with explicit reasons.</CardDescription>
+        </div>
+      </CardHeader>
+      <ul className="space-y-2">
+        {plan.skippedPhases.map((phase) => (
+          <li
+            key={`${phase.phase}:${phase.reason}`}
+            className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-3 py-2 text-xs text-ink-muted"
+          >
+            <span className="font-semibold text-ink">{REACT19_PHASE_DISPLAY_NAMES[phase.phase]}</span>{' '}
+            skipped — {phase.reason}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function BlockedReasonsCard({
+  plan,
+}: {
+  readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
+}): JSX.Element | null {
+  if (plan.blockedReasons.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Blocked reasons</CardTitle>
+          <CardDescription>
+            Plan approval and execution remain disabled until these blockers are resolved.
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <ul className="space-y-2">
+        {plan.blockedReasons.map((reason) => (
+          <li
+            key={reason}
+            className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger"
+          >
+            {reason}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function Stat({
   label,
   value,
 }: {
@@ -365,248 +588,16 @@ function DetectedRow({
   readonly value: string;
 }): JSX.Element {
   return (
-    <li className="flex items-center justify-between gap-3 rounded-md border border-canvas-border bg-canvas-subtle px-3 py-1.5">
-      <span className="text-2xs uppercase tracking-[0.14em] text-ink-subtle">
-        {label}
-      </span>
-      <span className="truncate font-mono text-xs text-ink">{value}</span>
-    </li>
-  );
-}
-
-function PlanGuide(): JSX.Element {
-  return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card tone="subtle">
-        <CardHeader>
-          <div>
-            <CardTitle>What the React 19 planner produces</CardTitle>
-            <CardDescription>
-              Deterministic rules — no AI involved at this step.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
-          <Bullet>Workspace setup step (always first).</Bullet>
-          <Bullet>Preflight + tooling phase steps.</Bullet>
-          <Bullet>React 18 bridge (React 16/17 sources only).</Bullet>
-          <Bullet>React 19 API-compatibility fixes.</Bullet>
-          <Bullet>JSX transform / TypeScript alignment.</Bullet>
-          <Bullet>React 19 upgrade (react, react-dom, types).</Bullet>
-          <Bullet>Source modernization (where safe).</Bullet>
-          <Bullet>Final validation + React 19 summary report.</Bullet>
-        </ul>
-      </Card>
-      <Card tone="subtle">
-        <CardHeader>
-          <div>
-            <CardTitle>What this step won't do</CardTitle>
-            <CardDescription>
-              Out of scope for Milestone 4 — React 19 planning only.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <ul className="space-y-2 text-xs text-ink-muted">
-          <Lock>Create the migration workspace.</Lock>
-          <Lock>Create Git branches or worktrees.</Lock>
-          <Lock>Run npm / yarn / pnpm / bun commands.</Lock>
-          <Lock>Call any AI provider.</Lock>
-          <Lock>Modify the selected project in any way.</Lock>
-        </ul>
-      </Card>
+    <div className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-3 py-2">
+      <p className="text-2xs uppercase tracking-[0.12em] text-ink-subtle">{label}</p>
+      <p className="mt-1 text-xs font-semibold text-ink">{value}</p>
     </div>
   );
 }
 
-function GeneratingState(): JSX.Element {
-  return (
-    <>
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>Generating React 19 migration plan</CardTitle>
-            <CardDescription>
-              Running the deterministic rule engine over the React 19 compatibility
-              scan. This step never contacts an AI provider and never touches the
-              filesystem.
-            </CardDescription>
-          </div>
-          <StatusIndicator status="running" label="Generating" variant="chip" />
-        </CardHeader>
-        <ul className="divide-y divide-canvas-border">
-          <PhaseRow
-            index={1}
-            title="Resolve project context"
-            hint="Read scan report, derive complexity + risk"
-            status="success"
-          />
-          <PhaseRow
-            index={2}
-            title="Apply foundation-first rules"
-            hint="Workspace, dependencies, TypeScript foundation"
-            status="running"
-          />
-          <PhaseRow
-            index={3}
-            title="Apply conversion + modernisation rules"
-            hint="Utilities, components, lifecycle, ReactDOM.render"
-            status="running"
-          />
-          <PhaseRow
-            index={4}
-            title="Attach validation + final report"
-            hint="Compose plan summary, risk, recommendations"
-            status="pending"
-          />
-        </ul>
-      </Card>
-      <EmptyState
-        icon="plan"
-        fullWidth
-        title="Generating React 19 migration plan"
-        description="This typically completes in well under a second. The generator is pure JavaScript over the in-memory React 19 compatibility scan report."
-      />
-    </>
-  );
-}
-
-function FailedState({
-  message,
-  onRetry,
-}: {
-  readonly message: string;
-  readonly onRetry: () => void;
-}): JSX.Element {
-  return (
-    <>
-      <ErrorMessage title="React 19 plan generation failed" message={message} />
-      <Card tone="subtle">
-        <CardHeader>
-          <div>
-            <CardTitle>Try again</CardTitle>
-            <CardDescription>
-              The generator is deterministic and idempotent — re-running it is
-              always safe and never modifies the project.
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <Button size="md" leadingIcon={<Icon name="plan" />} onClick={onRetry}>
-          Retry React 19 plan generation
-        </Button>
-      </Card>
-    </>
-  );
-}
-
-function GeneratedView({
-  isApproved,
-  plan,
-}: {
-  readonly isApproved: boolean;
-  readonly plan: NonNullable<
-    ReturnType<typeof useMigrationPlanStore.getState>['plan']
-  >;
-}): JSX.Element {
-  return (
-    <>
-      {isApproved ? <ApprovedBanner /> : null}
-      <MigrationPlanSummaryCard plan={plan} />
-      <MigrationPlanRiskPanel plan={plan} />
-      <MigrationPlanStepList steps={plan.steps} locked={isApproved} />
-      <MigrationPlanRecommendations plan={plan} />
-    </>
-  );
-}
-
-function ApprovedBanner(): JSX.Element {
-  return (
-    <div className="flex items-start gap-3 rounded-md border border-success/40 bg-success-soft px-4 py-3">
-      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-success/20 text-success">
-        <Icon name="check" className="h-3 w-3" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-semibold text-success">React 19 migration plan approved</p>
-        <p className="mt-1 text-xs leading-relaxed text-ink-muted">
-          Editing actions are locked. The workspace step is now unlocked in the
-          workflow sidebar — continue when you are ready. The original project
-          is still untouched.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* header meta + tiny helpers                                                 */
-/* -------------------------------------------------------------------------- */
-
-function HeaderMeta({
-  planStatus,
-  hasScanReport,
-}: {
-  readonly planStatus: ReturnType<typeof useMigrationPlanStore.getState>['status'];
-  readonly hasScanReport: boolean;
-}): JSX.Element {
-  return (
-    <>
-      <Badge tone="success" variant="soft" withDot>
-        Deterministic
-      </Badge>
-      <Badge tone="neutral" variant="outline">
-        Rule-based
-      </Badge>
-      <StatusIndicator
-        variant="chip"
-        status={PLAN_STATUS_KIND[planStatus]}
-        label={PLAN_STATUS_LABEL[planStatus]}
-      />
-      {!hasScanReport ? (
-        <Badge tone="warning" variant="soft" withDot>
-          Scan required
-        </Badge>
-      ) : null}
-    </>
-  );
-}
-
-interface PhaseRowProps {
-  readonly index: number;
-  readonly title: string;
-  readonly hint: string;
-  readonly status: 'idle' | 'pending' | 'running' | 'success' | 'warning' | 'error';
-}
-
-function PhaseRow({ index, title, hint, status }: PhaseRowProps): JSX.Element {
-  return (
-    <li className="flex items-center justify-between gap-4 py-3 first:pt-1 last:pb-1">
-      <div className="flex items-center gap-3">
-        <span className="flex h-6 w-6 items-center justify-center rounded-xs border border-canvas-border bg-canvas-subtle font-mono text-[10px] tabular-nums text-ink-subtle">
-          {index}
-        </span>
-        <div>
-          <p className="text-xs font-medium text-ink">{title}</p>
-          <p className="text-2xs text-ink-subtle">{hint}</p>
-        </div>
-      </div>
-      <StatusIndicator status={status} variant="chip" />
-    </li>
-  );
-}
-
-function Bullet({ children }: { readonly children: React.ReactNode }): JSX.Element {
-  return (
-    <li className="flex items-start gap-2">
-      <Icon name="check" className="mt-0.5 h-3 w-3 shrink-0 text-success" />
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function Lock({ children }: { readonly children: React.ReactNode }): JSX.Element {
-  return (
-    <li className="flex items-start gap-2">
-      <Icon name="lock" className="mt-0.5 h-3 w-3 shrink-0 text-ink-faint" />
-      <span>{children}</span>
-    </li>
-  );
+function riskTone(risk: 'blocker' | 'high' | 'medium' | 'low' | 'info'): BadgeTone {
+  if (risk === 'blocker' || risk === 'high') return 'danger';
+  if (risk === 'medium') return 'warning';
+  if (risk === 'low') return 'success';
+  return 'neutral';
 }

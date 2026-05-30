@@ -38,10 +38,11 @@ export function MigrationPlanActionBar({
   onContinue,
 }: MigrationPlanActionBarProps): JSX.Element {
   const isGenerating = status === 'generating';
-  const isGenerated = status === 'generated';
+  const isReady = status === 'ready';
   const isApproved = status === 'approved';
-  const isFailed = status === 'failed';
-  const hasDraftOrApproved = isGenerated || isApproved;
+  const isBlocked = status === 'blocked';
+  const isErrored = status === 'error';
+  const hasDraftOrApproved = isReady || isApproved || isBlocked;
 
   return (
     <>
@@ -71,18 +72,18 @@ export function MigrationPlanActionBar({
         title={
           !canGenerate
             ? (disabledGenerateReason ?? 'A completed React 19 compatibility scan is required.')
-            : isGenerated
+              : isReady
               ? 'Re-generate the React 19 migration plan from the latest scan report'
               : isApproved
                 ? 'Generate a new React 19 migration plan (will discard the approved plan)'
-                : isFailed
+                : isErrored
                   ? 'Retry React 19 plan generation'
                   : 'Generate the React 19 migration plan'
         }
       >
-        {isGenerated || isApproved
+        {isReady || isApproved || isBlocked
           ? 'Regenerate React 19 plan'
-          : isFailed
+          : isErrored
             ? 'Retry generation'
             : 'Generate React 19 migration plan'}
       </Button>

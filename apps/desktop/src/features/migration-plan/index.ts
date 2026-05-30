@@ -16,6 +16,14 @@ export {
 } from './hooks/useMigrationPlan';
 export { generateMigrationPlan } from './services/migrationPlanGenerator';
 export {
+  buildReact19MigrationPlanV2,
+  resolveReact19PlanTrack,
+  buildReact19PlanStepsFromRiskEngine,
+  groupRiskRecommendationsIntoPlanSteps,
+  buildReact19ValidationStrategy,
+  summarizeReact19PlanPhases,
+} from './services/react19MigrationPlanV2';
+export {
   resolveAllValidationCommands,
   resolveValidationCommand,
   pickValidationCommands,
@@ -27,15 +35,17 @@ export {
 } from './services/migrationPlanRiskService';
 export type {
   MigrationPlan,
-  MigrationPlanComplexity,
   MigrationPlanError,
   MigrationPlanErrorKind,
   MigrationPlanGeneratorInput,
-  MigrationPlanLifecycle,
   MigrationPlanState,
   MigrationPlanStatus,
-  MigrationPlanStrategy,
-  MigrationPlanSummary,
+  React19MigrationPlanV2,
+  React19PlanPhaseSummary,
+  React19PlanStep,
+  React19PlanStepExecutionType,
+  React19PlanStepStatus,
+  React19ValidationStrategy,
   MigrationStep,
   MigrationStepCategory,
   MigrationStepExecution,

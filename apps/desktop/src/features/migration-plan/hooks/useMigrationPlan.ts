@@ -64,6 +64,7 @@ interface MigrationPlanStoreState {
   readonly status: MigrationPlanStatus;
   readonly plan: MigrationPlan | undefined;
   readonly error: MigrationPlanError | undefined;
+  readonly approved: boolean;
   readonly scanReportId: string | undefined;
 }
 
@@ -73,6 +74,7 @@ const INITIAL_STATE: MigrationPlanStoreState = {
   status: 'idle',
   plan: undefined,
   error: undefined,
+  approved: false,
   scanReportId: undefined,
 };
 
@@ -87,9 +89,12 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
     const planGate = resolveReact19PlanGenerationGate(scanReport);
     if (!planGate.canGeneratePlan) {
       set({
-        status: 'failed',
+        status: 'blocked',
+        plan: undefined,
+        approved: false,
+        scanReportId: scanReport.id,
         error: {
-          kind: 'generator-failed',
+          kind: 'plan-blocked',
           message: planGate.reasons[0] ?? planGate.explanation,
         },
       });
@@ -99,6 +104,7 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
 
     set({
       status: 'generating',
+      approved: false,
       error: undefined,
     });
 
@@ -107,7 +113,10 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
       plan = generateMigrationPlan(scanReport);
     } catch (err) {
       set({
-        status: 'failed',
+        status: 'error',
+        plan: undefined,
+        approved: false,
+        scanReportId: scanReport.id,
         error: {
           kind: 'generator-failed',
           message: err instanceof Error ? err.message : String(err),
@@ -118,9 +127,15 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
       return;
     }
 
+    const executableSteps = plan.steps.filter(
+      (step) => step.status === 'pending' && step.canRunInExecution !== false,
+    );
+    const isBlocked = !plan.canExecute || executableSteps.length === 0;
+
     set({
-      status: 'generated',
+      status: isBlocked ? 'blocked' : 'ready',
       plan,
+      approved: false,
       error: undefined,
       scanReportId: scanReport.id,
     });
@@ -130,8 +145,14 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
   },
 
   approvePlan: () => {
-    const { plan } = get();
+    const { plan, status } = get();
     if (plan === undefined) return;
+    if (status !== 'ready') return;
+    if (!plan.canExecute) return;
+    const hasExecutableStep = plan.steps.some(
+      (step) => step.status === 'pending' && step.canRunInExecution !== false,
+    );
+    if (!hasExecutableStep) return;
 
     const approvedAt = new Date().toISOString();
     const approvedPlan: MigrationPlan = {
@@ -143,6 +164,7 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
     set({
       status: 'approved',
       plan: approvedPlan,
+      approved: true,
       error: undefined,
     });
     useWorkflowProgressStore.getState().markStepCompleted(WORKFLOW_STEP_ID);
@@ -185,12 +207,12 @@ export const selectPlanError = (
 
 /** True when the plan has been explicitly approved by the user. */
 export function selectIsPlanApproved(s: MigrationPlanStoreState): boolean {
-  return s.status === 'approved' && s.plan?.status === 'approved';
+  return s.status === 'approved' && s.approved;
 }
 
 /** True when a draft plan is available and awaiting approval. */
 export function selectHasDraftPlan(s: MigrationPlanStoreState): boolean {
-  return s.status === 'generated' && s.plan !== undefined;
+  return s.status === 'ready' && s.plan !== undefined;
 }
 
 /* -------------------------------------------------------------------------- */

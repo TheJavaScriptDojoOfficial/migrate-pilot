@@ -19,51 +19,47 @@ import type {
 
 /** Human-readable category label shown in chips and step rows. */
 export const CATEGORY_LABEL: Record<MigrationStepCategory, string> = {
-  workspace: 'Workspace',
-  dependency: 'Dependency',
-  config: 'Config',
-  typescript: 'TypeScript',
-  source: 'Source',
-  component: 'Component',
-  routing: 'Routing',
-  'state-management': 'State',
-  testing: 'Testing',
+  preflight: 'Preflight',
   validation: 'Validation',
-  report: 'Report',
+  bridge: 'React bridge',
+  dependency: 'Dependency',
+  tooling: 'Tooling',
+  typescript: 'TypeScript',
+  api: 'API compatibility',
+  routing: 'Routing',
+  testing: 'Testing',
 };
 
 /** Icon glyph paired with each category — kept consistent with the sidebar. */
 export const CATEGORY_ICON: Record<MigrationStepCategory, IconName> = {
-  workspace: 'workspace',
-  dependency: 'plan',
-  config: 'settings',
-  typescript: 'report',
-  source: 'diff',
-  component: 'sparkles',
-  routing: 'arrow-right',
-  'state-management': 'shield',
-  testing: 'check-circle',
+  preflight: 'help',
   validation: 'check',
-  report: 'report',
+  bridge: 'arrow-right',
+  dependency: 'plan',
+  tooling: 'settings',
+  typescript: 'report',
+  api: 'sparkles',
+  routing: 'arrow-right',
+  testing: 'check-circle',
 };
 
 /** Tone used by the category chip. */
 export const CATEGORY_TONE: Record<MigrationStepCategory, BadgeTone> = {
-  workspace: 'info',
-  dependency: 'warning',
-  config: 'info',
-  typescript: 'success',
-  source: 'info',
-  component: 'accent',
-  routing: 'info',
-  'state-management': 'info',
-  testing: 'info',
+  preflight: 'warning',
   validation: 'success',
-  report: 'neutral',
+  bridge: 'accent',
+  dependency: 'warning',
+  tooling: 'info',
+  typescript: 'success',
+  api: 'danger',
+  routing: 'info',
+  testing: 'info',
 };
 
 /** Risk → badge tone (matches the scanner risk card). */
 export const RISK_TONE: Record<MigrationStepRisk, BadgeTone> = {
+  blocker: 'danger',
+  info: 'neutral',
   low: 'success',
   medium: 'warning',
   high: 'danger',
@@ -73,24 +69,25 @@ export const RISK_TONE: Record<MigrationStepRisk, BadgeTone> = {
 export const PLAN_STATUS_KIND: Record<MigrationPlanStatus, StatusKind> = {
   idle: 'idle',
   generating: 'running',
-  generated: 'pending',
+  ready: 'pending',
+  blocked: 'error',
+  error: 'error',
   approved: 'success',
-  failed: 'error',
 };
 
 /** Plan status → header status chip label. */
 export const PLAN_STATUS_LABEL: Record<MigrationPlanStatus, string> = {
   idle: 'No plan generated',
   generating: 'Generating plan',
-  generated: 'Draft awaiting approval',
+  ready: 'Plan ready for approval',
+  blocked: 'Plan blocked',
+  error: 'Generation failed',
   approved: 'Plan approved',
-  failed: 'Generation failed',
 };
 
 /** Plan-time status → tone shown on a step row. */
 export const STEP_STATUS_TONE: Record<MigrationStepStatus, BadgeTone> = {
   pending: 'neutral',
-  approved: 'success',
   skipped: 'warning',
   blocked: 'danger',
 };

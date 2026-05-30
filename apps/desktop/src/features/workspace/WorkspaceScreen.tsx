@@ -191,8 +191,8 @@ export function WorkspaceScreen(): JSX.Element {
               <WorkspaceSummaryCard
                 projectName={project.name}
                 sourcePath={project.path}
-                planTitle={plan.summary.title}
-                planTotalSteps={plan.summary.totalSteps}
+                planTitle={plan.title}
+                planTotalSteps={plan.steps.length}
               />
 
               {status === 'idle' ? (
