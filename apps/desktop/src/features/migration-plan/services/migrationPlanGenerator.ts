@@ -60,6 +60,7 @@ import type {
   MigrationPlanSummary,
   MigrationStep,
   MigrationStepCategory,
+  MigrationStepExecution,
   MigrationStepRisk,
 } from '../types/migrationPlan.types';
 
@@ -171,6 +172,7 @@ interface StepDraft {
   readonly expectedAreas?: readonly string[];
   readonly validationCommands?: readonly string[];
   readonly dependsOn?: readonly string[];
+  readonly execution?: MigrationStepExecution;
 }
 
 class StepBuilder {
@@ -215,6 +217,7 @@ class StepBuilder {
         ...(draft.dependsOn !== undefined && draft.dependsOn.length > 0
           ? { dependsOn: draft.dependsOn }
           : {}),
+        ...(draft.execution !== undefined ? { execution: draft.execution } : {}),
       };
     });
   }
@@ -293,6 +296,31 @@ function appendDependencyModernizationSteps(
     ['build', 'lint', 'test'],
   );
 
+  // Generic execution metadata — the executor itself is `package-json-
+  // dependency-update` (not node-sass-specific). The step id stays
+  // node-sass-specific because the *step* is specific, even though the
+  // executor is reusable for any package add/remove flow.
+  const execution: MigrationStepExecution = {
+    mode: 'scripted',
+    executorKey: 'package-json-dependency-update',
+    params: {
+      remove: [
+        {
+          name: 'node-sass',
+          from: ['dependencies', 'devDependencies', 'optionalDependencies'],
+        },
+      ],
+      add: [
+        {
+          name: 'sass',
+          version: '^1.69.0',
+          to: 'devDependencies',
+          onlyIfMissing: true,
+        },
+      ],
+    },
+  };
+
   b.add({
     id: STEP_IDS.nodeSass,
     title: 'Replace node-sass with sass',
@@ -308,6 +336,7 @@ function appendDependencyModernizationSteps(
     expectedAreas: ['styles (*.scss, *.sass)'],
     validationCommands: validation,
     dependsOn: [STEP_IDS.workspace],
+    execution,
   });
 }
 

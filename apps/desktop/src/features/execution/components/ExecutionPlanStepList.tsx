@@ -8,6 +8,7 @@ import {
 
 import type { MigrationStep } from '@features/migration-plan';
 
+import { EXECUTOR_REGISTRY } from '../services/executorRegistry';
 import type {
   ExecutionCapability,
   ExecutionStepStatus,
@@ -21,6 +22,11 @@ import { ExecutionStepCard } from './ExecutionStepCard';
  * Pure projection of `steps` + per-step capability/status state. Approval
  * and execution actions live in the action bar; this component is
  * read-only beyond the click-to-select interaction.
+ *
+ * The header copy is generic: it lists what executors are currently
+ * supported by the registry rather than naming a single migration
+ * scenario. When the plan has zero scripted-executable steps, the body
+ * copy explains that this is *expected*, not a bug.
  */
 export interface ExecutionPlanStepListProps {
   readonly steps: readonly MigrationStep[];
@@ -40,8 +46,14 @@ export function ExecutionPlanStepList({
   onSelectStep,
 }: ExecutionPlanStepListProps): JSX.Element {
   const executableCount = steps.filter(
-    (s) => capabilities[s.id]?.executable === true,
+    (s) =>
+      capabilities[s.id]?.executable === true ||
+      capabilities[s.id]?.badge === 'scripted-unverified',
   ).length;
+
+  const supportedExecutorLabels = Object.values(EXECUTOR_REGISTRY)
+    .filter((e) => e.supported)
+    .map((e) => e.label);
 
   return (
     <Card>
@@ -49,9 +61,12 @@ export function ExecutionPlanStepList({
         <div>
           <CardTitle>Migration steps</CardTitle>
           <CardDescription>
-            Pick a step to inspect its executor availability. Only the
-            scripted node-sass replacement can run in this milestone — every
-            other step shows an Unsupported badge.
+            Pick a step to inspect its executor availability. Scripted
+            execution is available only for steps backed by a registered
+            safe executor.{' '}
+            {supportedExecutorLabels.length > 0
+              ? `Currently supported: ${supportedExecutorLabels.join(', ')}.`
+              : 'No scripted executors are supported in this build yet.'}
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -60,11 +75,11 @@ export function ExecutionPlanStepList({
           </Badge>
           {executableCount > 0 ? (
             <Badge tone="success" variant="soft" withDot>
-              {executableCount} executable
+              {executableCount} scripted
             </Badge>
           ) : (
             <Badge tone="neutral" variant="outline">
-              No executable steps yet
+              No scripted steps in this plan
             </Badge>
           )}
         </div>
@@ -74,7 +89,18 @@ export function ExecutionPlanStepList({
         <p className="text-xs text-ink-muted">
           The plan contains no steps. Re-generate the plan and try again.
         </p>
-      ) : (
+      ) : executableCount === 0 ? (
+        <div className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 p-3">
+          <p className="text-xs leading-relaxed text-ink-muted">
+            No executable scripted steps are available for this plan yet.
+            This does not mean the plan is invalid — it means these steps
+            require manual work, AI execution, or future executors. The
+            list still works for review and selection.
+          </p>
+        </div>
+      ) : null}
+
+      {steps.length > 0 ? (
         <ul className="space-y-2">
           {steps.map((step) => (
             <li key={step.id}>
@@ -89,7 +115,7 @@ export function ExecutionPlanStepList({
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
     </Card>
   );
 }

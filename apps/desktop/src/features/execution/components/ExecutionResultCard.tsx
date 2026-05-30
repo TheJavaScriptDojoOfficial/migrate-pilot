@@ -8,6 +8,7 @@ import {
 } from '@shared/ui/Card';
 import { Icon } from '@shared/ui/Icon';
 
+import { getExecutorEntry } from '../services/executorRegistry';
 import {
   CHANGE_TYPE_LABEL,
   CHANGE_TYPE_TONE,
@@ -27,6 +28,9 @@ export function ExecutionResultCard({
   run,
 }: ExecutionResultCardProps): JSX.Element {
   const isSuccess = run.status === 'completed';
+  const executorEntry = getExecutorEntry(run.executorKey);
+  const executorLabel =
+    executorEntry?.label ?? run.executorKey ?? `${run.mode} executor`;
 
   return (
     <Card accent={isSuccess}>
@@ -34,7 +38,7 @@ export function ExecutionResultCard({
         <div>
           <CardTitle>Execution result</CardTitle>
           <CardDescription>
-            Captured by the scripted executor on {formatTimestamp(run.startedAt)}.
+            Captured by {executorLabel} on {formatTimestamp(run.startedAt)}.
           </CardDescription>
         </div>
         <Badge
@@ -71,7 +75,7 @@ export function ExecutionResultCard({
           </p>
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             {isSuccess
-              ? 'Only the workspace package.json was modified. The original project remains untouched.'
+              ? 'Only the workspace was modified. The original project remains untouched.'
               : (run.error?.message ?? 'See logs for details.')}
           </p>
         </div>
@@ -86,7 +90,7 @@ export function ExecutionResultCard({
             icon="folder"
             value={run.workspacePath}
           />
-          <Field label="Executor" icon="play" value={run.executor} />
+          <Field label="Executor" icon="play" value={executorLabel} />
         </dl>
       </CardSection>
 

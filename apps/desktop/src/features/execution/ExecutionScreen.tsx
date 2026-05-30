@@ -47,7 +47,7 @@ import {
 import type { ExecutionStatus } from './types/execution.types';
 
 /**
- * Step 6 — Execution Engine (Milestone 6).
+ * Step 6 — Execute migration (generic execution framework).
  *
  * Owns the execution state machine for the workflow:
  *
@@ -58,12 +58,14 @@ import type { ExecutionStatus } from './types/execution.types';
  *   completed                   → result card + logs + workflow `execute` complete
  *   failed                      → error message + retry action
  *
- * UX rules:
+ * Architectural rules
+ * -------------------
  *   - The screen never auto-navigates after a successful run.
  *   - When plan or workspace changes upstream, the engine resets so the
  *     user is forced to re-verify capability before running.
- *   - Only the scripted node-sass replacement step can run in this
- *     milestone; every other step renders the unsupported badge.
+ *   - Steps are dispatched through their `execution` metadata
+ *     (mode + executorKey + params). The screen NEVER inspects step ids
+ *     to decide executability — only the executor registry does.
  */
 export function ExecutionScreen(): JSX.Element {
   const navigate = useNavigate();
@@ -109,7 +111,11 @@ export function ExecutionScreen(): JSX.Element {
       ...(workspaceResult.branchName !== undefined
         ? { branchName: workspaceResult.branchName }
         : {}),
-      planSteps: plan.steps.map((s) => ({ id: s.id, title: s.title })),
+      planSteps: plan.steps.map((s) => ({
+        id: s.id,
+        title: s.title,
+        ...(s.execution !== undefined ? { execution: s.execution } : {}),
+      })),
     });
   }, [
     isPlanApproved,
@@ -193,11 +199,25 @@ export function ExecutionScreen(): JSX.Element {
               ? {}
               : { disabledRetryReason: 'Retry is available after a failed run.' })}
             onRun={() => {
-              void runSelectedStep();
+              if (selectedPlanStep !== undefined) {
+                void runSelectedStep({
+                  id: selectedPlanStep.id,
+                  title: selectedPlanStep.title,
+                  ...(selectedPlanStep.execution !== undefined
+                    ? { execution: selectedPlanStep.execution }
+                    : {}),
+                });
+              }
             }}
             onRetry={() => {
               if (selectedPlanStep !== undefined) {
-                void retryStep(selectedPlanStep.id, selectedPlanStep.title);
+                void retryStep({
+                  id: selectedPlanStep.id,
+                  title: selectedPlanStep.title,
+                  ...(selectedPlanStep.execution !== undefined
+                    ? { execution: selectedPlanStep.execution }
+                    : {}),
+                });
               }
             }}
             onReset={resetExecution}
@@ -252,13 +272,19 @@ export function ExecutionScreen(): JSX.Element {
                     <ExecutionCapabilityCard
                       step={selectedPlanStep}
                       capability={selectedCapability}
-                      canVerify={isTauri && status !== 'running'}
+                      canVerify={
+                        isTauri &&
+                        status !== 'running' &&
+                        selectedPlanStep.execution !== undefined
+                      }
                       verifying={false}
                       onVerify={() => {
-                        void checkCapability(
-                          selectedPlanStep.id,
-                          selectedPlanStep.title,
-                        );
+                        if (selectedPlanStep.execution === undefined) return;
+                        void checkCapability({
+                          id: selectedPlanStep.id,
+                          title: selectedPlanStep.title,
+                          execution: selectedPlanStep.execution,
+                        });
                       }}
                     />
                   ) : (
@@ -365,8 +391,9 @@ function NoSelectionCard(): JSX.Element {
           <CardTitle>No step selected</CardTitle>
           <CardDescription>
             Pick a step on the left to inspect executor availability and run
-            it. Only the scripted node-sass replacement is supported in this
-            milestone.
+            it. Scripted execution is dispatched through the executor
+            registry — only steps backed by a registered safe executor can
+            run today.
           </CardDescription>
         </div>
       </CardHeader>

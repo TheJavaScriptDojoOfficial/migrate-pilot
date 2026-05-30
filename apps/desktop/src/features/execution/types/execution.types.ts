@@ -17,7 +17,14 @@
  *   by both the store and the screen. Add a state by extending
  *   {@link ExecutionStatus} and the exhaustive switch in
  *   `executionPresentationService` will force every callsite to update.
+ * - Executors are looked up via `MigrationStepExecution.executorKey` and
+ *   the {@link executorRegistry}. The execution layer NEVER hardcodes a
+ *   plan step id.
  */
+import type {
+  MigrationStepExecution,
+  MigrationStepExecutionMode,
+} from '@features/migration-plan';
 
 /* -------------------------------------------------------------------------- */
 /* State machine                                                              */
@@ -49,8 +56,9 @@ export type ExecutionStatus =
  *   running     → executor is currently running this step.
  *   completed   → executor finished successfully for this step.
  *   failed      → executor failed; retry is available.
- *   unsupported → no executor exists for this step yet (Milestone 6 only
- *                 ships the node-sass scripted executor).
+ *   unsupported → no executor is available for this step yet (manual,
+ *                 AI, validation-only, missing metadata, or unknown
+ *                 executor key).
  *   skipped     → the user chose to skip this step.
  */
 export type ExecutionStepStatus =
@@ -65,7 +73,19 @@ export type ExecutionStepStatus =
 /* Domain types                                                               */
 /* -------------------------------------------------------------------------- */
 
-export type ExecutionExecutorType = 'scripted';
+/**
+ * Coarse classification used by the UI to render the right badge per
+ * step. Computed by the local capability classifier; the IPC capability
+ * probe can upgrade `scripted-unverified` → `executable`.
+ */
+export type ExecutionCapabilityBadge =
+  | 'executable'
+  | 'scripted-unverified'
+  | 'manual'
+  | 'validation'
+  | 'ai-not-available'
+  | 'unsupported-executor'
+  | 'missing-metadata';
 
 export type ExecutionLogLevel = 'info' | 'warning' | 'error' | 'success';
 
@@ -93,15 +113,22 @@ export interface ExecutionError {
 /**
  * Capability probe result for a plan step.
  *
- * `executable === true` implies an `executorType` is set. The UI uses
- * `reason` verbatim when the step is not executable so the user is never
- * left wondering why a Run button is greyed out.
+ * `executable === true` implies a registered + supported `executorKey`
+ * is set. The UI uses `reason` verbatim when the step is not executable
+ * so the user is never left wondering why a Run button is greyed out.
  */
 export interface ExecutionCapability {
   readonly planStepId: string;
   readonly executable: boolean;
-  readonly executorType?: ExecutionExecutorType;
+  /** Execution mode declared by the plan step (when present). */
+  readonly mode?: MigrationStepExecutionMode;
+  /** Generic executor key declared by the plan step (when present). */
+  readonly executorKey?: string;
+  /** Coarse badge used by the UI. */
+  readonly badge: ExecutionCapabilityBadge;
   readonly reason: string;
+  /** Human-readable list of missing requirements (capability probe only). */
+  readonly missingRequirements?: readonly string[];
 }
 
 /**
@@ -120,11 +147,18 @@ export interface ExecutionStepRun {
   readonly status: 'running' | 'completed' | 'failed';
   readonly startedAt: string;
   readonly completedAt?: string;
-  readonly executor: ExecutionExecutorType;
+  /** Generic executor key that produced this run (e.g. `package-json-dependency-update`). */
+  readonly executorKey: string;
+  /** Execution mode that was dispatched. Always `'scripted'` today. */
+  readonly mode: MigrationStepExecutionMode;
   readonly changedFiles: readonly ExecutionChangedFile[];
   readonly logs: readonly ExecutionLogEntry[];
   readonly error?: ExecutionError;
 }
+
+/* Re-export the planner's execution metadata type so external execution
+ * callers can type-check without crossing into the migration-plan barrel. */
+export type { MigrationStepExecution, MigrationStepExecutionMode };
 
 /* -------------------------------------------------------------------------- */
 /* Store-shaped state                                                         */

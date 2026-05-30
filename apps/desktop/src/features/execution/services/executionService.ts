@@ -12,6 +12,11 @@
  *   parsing, and file writes all live in Rust.
  * - Throws typed `ExecutionServiceError` so the calling hook can branch on
  *   the failure mode without parsing strings.
+ * - The execution wire contract is generic: the JS layer sends the
+ *   step's `MigrationStepExecution` metadata (mode + executorKey +
+ *   params) and Rust dispatches based on `executorKey`. The plan step
+ *   id is forwarded for telemetry / logging only — it is NEVER used to
+ *   choose an executor.
  */
 import {
   invokeCommand,
@@ -19,19 +24,23 @@ import {
   type ExecutionChangedFileRaw,
   type ExecutionErrorRaw,
   type ExecutionLogEntryRaw,
+  type ExecutionRequestRaw,
   type ExecutionStepRunRaw,
 } from '@shared/utils/commands';
 import { runtimeConfig } from '@shared/config/runtime';
 
+import type { MigrationStepExecution } from '@features/migration-plan';
+
 import type {
   ExecutionCapability,
+  ExecutionCapabilityBadge,
   ExecutionChangeType,
   ExecutionChangedFile,
   ExecutionError,
-  ExecutionExecutorType,
   ExecutionLogEntry,
   ExecutionLogLevel,
   ExecutionStepRun,
+  MigrationStepExecutionMode,
 } from '../types/execution.types';
 
 /* -------------------------------------------------------------------------- */
@@ -71,6 +80,8 @@ export interface CheckCapabilityInput {
   readonly sourcePath: string;
   readonly planStepId: string;
   readonly stepTitle: string;
+  /** Required: the planner's declared execution intent for the step. */
+  readonly execution: MigrationStepExecution;
 }
 
 export async function checkExecutionCapability(
@@ -90,6 +101,7 @@ export async function checkExecutionCapability(
       sourcePath: input.sourcePath,
       planStepId: input.planStepId,
       stepTitle: input.stepTitle,
+      execution: toExecutionRequest(input.execution),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -108,6 +120,8 @@ export interface RunStepInput {
   readonly planId: string;
   readonly planStepId: string;
   readonly stepTitle: string;
+  /** Required: the planner's declared execution intent for the step. */
+  readonly execution: MigrationStepExecution;
 }
 
 export async function runExecutionStep(
@@ -128,6 +142,7 @@ export async function runExecutionStep(
       planId: input.planId,
       planStepId: input.planStepId,
       stepTitle: input.stepTitle,
+      execution: toExecutionRequest(input.execution),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -157,16 +172,52 @@ const KNOWN_LEVELS: ReadonlySet<ExecutionLogLevel> =
 const KNOWN_CHANGE_TYPES: ReadonlySet<ExecutionChangeType> =
   new Set<ExecutionChangeType>(['modified', 'created', 'deleted']);
 
+const KNOWN_BADGES: ReadonlySet<ExecutionCapabilityBadge> =
+  new Set<ExecutionCapabilityBadge>([
+    'executable',
+    'scripted-unverified',
+    'manual',
+    'validation',
+    'ai-not-available',
+    'unsupported-executor',
+    'missing-metadata',
+  ]);
+
+const KNOWN_MODES: ReadonlySet<MigrationStepExecutionMode> =
+  new Set<MigrationStepExecutionMode>(['scripted', 'ai', 'manual', 'validation']);
+
 export function parseCapability(
   raw: ExecutionCapabilityRaw,
 ): ExecutionCapability {
   const executable = raw.executable === true;
-  const executorType = parseExecutorType(raw.executorType);
+  const badge: ExecutionCapabilityBadge =
+    typeof raw.badge === 'string' && (KNOWN_BADGES as Set<string>).has(raw.badge)
+      ? (raw.badge as ExecutionCapabilityBadge)
+      : executable
+        ? 'executable'
+        : 'unsupported-executor';
+  const mode =
+    typeof raw.mode === 'string' && (KNOWN_MODES as Set<string>).has(raw.mode)
+      ? (raw.mode as MigrationStepExecutionMode)
+      : undefined;
+  const executorKey =
+    typeof raw.executorKey === 'string' && raw.executorKey.length > 0
+      ? raw.executorKey
+      : undefined;
+  const missingRequirements =
+    Array.isArray(raw.missingRequirements) && raw.missingRequirements.length > 0
+      ? raw.missingRequirements.filter((s): s is string => typeof s === 'string')
+      : undefined;
   return {
     planStepId: raw.planStepId,
     executable,
-    ...(executable && executorType !== undefined ? { executorType } : {}),
+    badge,
+    ...(mode !== undefined ? { mode } : {}),
+    ...(executorKey !== undefined ? { executorKey } : {}),
     reason: raw.reason,
+    ...(missingRequirements !== undefined && missingRequirements.length > 0
+      ? { missingRequirements }
+      : {}),
   };
 }
 
@@ -177,6 +228,11 @@ export function parseStepRun(raw: ExecutionStepRunRaw): ExecutionStepRun {
       : raw.status === 'failed'
         ? 'failed'
         : 'completed';
+
+  const mode: MigrationStepExecutionMode =
+    typeof raw.mode === 'string' && (KNOWN_MODES as Set<string>).has(raw.mode)
+      ? (raw.mode as MigrationStepExecutionMode)
+      : 'scripted';
 
   return {
     id: raw.id,
@@ -189,21 +245,14 @@ export function parseStepRun(raw: ExecutionStepRunRaw): ExecutionStepRun {
     ...(typeof raw.completedAt === 'string' && raw.completedAt.length > 0
       ? { completedAt: raw.completedAt }
       : {}),
-    executor: 'scripted',
+    executorKey: typeof raw.executorKey === 'string' ? raw.executorKey : '',
+    mode,
     changedFiles: raw.changedFiles.map(parseChangedFile),
     logs: raw.logs.map(parseLog),
     ...(raw.error !== undefined && raw.error !== null
       ? { error: parseError(raw.error) }
       : {}),
   };
-}
-
-function parseExecutorType(
-  value: string | null | undefined,
-): ExecutionExecutorType | undefined {
-  if (typeof value !== 'string') return undefined;
-  if (value === 'scripted') return 'scripted';
-  return undefined;
 }
 
 function parseChangedFile(raw: ExecutionChangedFileRaw): ExecutionChangedFile {
@@ -241,4 +290,26 @@ function parseError(raw: ExecutionErrorRaw): ExecutionError {
       ? { detail: raw.detail }
       : {}),
   };
+}
+
+/**
+ * Coerce a `MigrationStepExecution` into the wire shape consumed by the
+ * Rust commands. We only forward known fields and never dispatch on the
+ * params client-side — Rust is responsible for validating the params.
+ */
+function toExecutionRequest(execution: MigrationStepExecution): ExecutionRequestRaw {
+  const out: {
+    mode: string;
+    executorKey?: string;
+    params?: Record<string, unknown>;
+  } = {
+    mode: execution.mode,
+  };
+  if (execution.executorKey !== undefined) {
+    out.executorKey = execution.executorKey;
+  }
+  if (execution.params !== undefined) {
+    out.params = execution.params as Record<string, unknown>;
+  }
+  return out;
 }

@@ -1,10 +1,10 @@
 /**
- * Execution engine store (Milestone 6).
+ * Execution engine store (generic execution framework).
  *
  * Owns the execution state machine, capability cache, per-step status,
  * captured runs, and engine-level errors. Synchronises completion of one
- * supported scripted execution into the cross-feature workflow store so
- * the next step (Diff Review) becomes reachable in the next milestone.
+ * scripted execution into the cross-feature workflow store so the next
+ * step (Diff Review) becomes reachable.
  *
  * Why a dedicated store rather than `useSessionStore`?
  *   - Keeps the per-step execution state machine, log buffers, and
@@ -18,15 +18,22 @@
  *   - When the upstream plan id or workspace path changes,
  *     `clearIfPlanOrWorkspaceChanges` wipes any stale execution state so
  *     the user is forced to re-evaluate capability before re-running.
+ *
+ * Generic dispatch contract:
+ *   - The store NEVER inspects the plan step id to decide executability.
+ *   - The selected step is run by forwarding its `MigrationStepExecution`
+ *     metadata (mode + executorKey + params) to the Tauri layer; Rust
+ *     dispatches based on `executorKey`.
  */
 import { create } from 'zustand';
 
 import { useWorkflowProgressStore } from '@shared/hooks/useWorkflowProgress';
 
+import type { MigrationStepExecution } from '@features/migration-plan';
+
 import {
   isPotentiallyExecutable,
   localExecutionPreCapability,
-  NODE_SASS_PLAN_STEP_ID,
 } from '../services/executionCapabilityService';
 import {
   ExecutionServiceError,
@@ -47,13 +54,19 @@ const WORKFLOW_STEP_ID = 'execute';
 /* Store shape                                                                */
 /* -------------------------------------------------------------------------- */
 
+export interface InitializeStep {
+  readonly id: string;
+  readonly title: string;
+  readonly execution?: MigrationStepExecution;
+}
+
 export interface InitializeInput {
   readonly planId: string;
   readonly workspacePath: string;
   readonly sourcePath: string;
   readonly branchName?: string;
   /** Plan steps the user can choose from. */
-  readonly planSteps: readonly { id: string; title: string }[];
+  readonly planSteps: readonly InitializeStep[];
 }
 
 interface ExecutionEngineActions {
@@ -69,11 +82,11 @@ interface ExecutionEngineActions {
   /** Highlight a plan step in the UI. Does not run anything. */
   selectStep: (planStepId: string) => void;
   /** Probe executor capability for a plan step. Updates `capabilities`. */
-  checkCapability: (planStepId: string, stepTitle: string) => Promise<void>;
-  /** Run the currently selected step using the scripted executor. */
-  runSelectedStep: () => Promise<void>;
+  checkCapability: (step: InitializeStep) => Promise<void>;
+  /** Run the currently selected step using the dispatched executor. */
+  runSelectedStep: (step: InitializeStep) => Promise<void>;
   /** Re-run a specific step. Used by the failure-state retry button. */
-  retryStep: (planStepId: string, stepTitle: string) => Promise<void>;
+  retryStep: (step: InitializeStep) => Promise<void>;
   /** Reset the entire engine state. Drops the workflow completion. */
   resetExecution: () => void;
   /** Drop everything if the upstream plan or workspace changed. */
@@ -133,8 +146,9 @@ export const useExecutionEngineStore = create<Store>((set, get) => ({
       current.workspacePath === input.workspacePath;
 
     // Pre-classify every plan step so the UI can render unsupported
-    // badges immediately. Steps that *might* be executable get a "verify
-    // against the workspace" pre-capability; the IPC check upgrades it.
+    // badges immediately. Steps that *might* be executable get a
+    // "verify against the workspace" pre-capability; the IPC check
+    // upgrades it.
     const nextCapabilities: Record<string, ExecutionCapability> = sameSession
       ? { ...current.capabilities }
       : {};
@@ -196,30 +210,44 @@ export const useExecutionEngineStore = create<Store>((set, get) => ({
     });
   },
 
-  checkCapability: async (planStepId, stepTitle) => {
+  checkCapability: async (step) => {
     const current = get();
     if (current.workspacePath === undefined || current.sourcePath === undefined) {
       return;
     }
     if (current.status === 'running') return;
 
+    if (step.execution === undefined) {
+      // Without execution metadata the IPC probe cannot decide anything;
+      // the local classifier already produced the right unsupported
+      // capability — surface that and bail out.
+      const cap = localExecutionPreCapability(step);
+      set({
+        capabilities: { ...current.capabilities, [step.id]: cap },
+        error: undefined,
+      });
+      return;
+    }
+
     let capability: ExecutionCapability;
     try {
       capability = await checkExecutionCapability({
         workspacePath: current.workspacePath,
         sourcePath: current.sourcePath,
-        planStepId,
-        stepTitle,
+        planStepId: step.id,
+        stepTitle: step.title,
+        execution: step.execution,
       });
     } catch (err) {
       const error = errorFromThrown(err);
       const fallback: ExecutionCapability = {
-        planStepId,
+        planStepId: step.id,
         executable: false,
+        badge: 'unsupported-executor',
         reason: error.message,
       };
       set({
-        capabilities: { ...current.capabilities, [planStepId]: fallback },
+        capabilities: { ...current.capabilities, [step.id]: fallback },
         error,
       });
       return;
@@ -228,27 +256,25 @@ export const useExecutionEngineStore = create<Store>((set, get) => ({
     const nextStepStatuses: Record<string, ExecutionStepStatus> = {
       ...current.stepStatuses,
     };
-    const previous = nextStepStatuses[planStepId];
+    const previous = nextStepStatuses[step.id];
     // Never overwrite a terminal run status with the capability probe.
     if (previous !== 'completed' && previous !== 'failed' && previous !== 'running') {
-      nextStepStatuses[planStepId] = capability.executable ? 'pending' : 'unsupported';
+      nextStepStatuses[step.id] = capability.executable ? 'pending' : 'unsupported';
     }
 
     set({
-      capabilities: { ...current.capabilities, [planStepId]: capability },
+      capabilities: { ...current.capabilities, [step.id]: capability },
       stepStatuses: nextStepStatuses,
       status: deriveStatus(current, current.selectedPlanStepId, nextStepStatuses),
       error: undefined,
     });
   },
 
-  runSelectedStep: async () => {
+  runSelectedStep: async (step) => {
     const current = get();
-    const planStepId = current.selectedPlanStepId;
-    if (planStepId === undefined) return;
-    const capability = current.capabilities[planStepId];
+    if (current.selectedPlanStepId !== step.id) return;
+    const capability = current.capabilities[step.id];
     if (capability === undefined) return;
-    if (planStepId !== NODE_SASS_PLAN_STEP_ID) return;
     if (
       current.planId === undefined ||
       current.workspacePath === undefined ||
@@ -258,11 +284,12 @@ export const useExecutionEngineStore = create<Store>((set, get) => ({
     }
     if (current.status === 'running') return;
     if (!capability.executable) return;
+    if (step.execution === undefined) return;
 
-    await executeStepInternal(set, get, planStepId, capabilityStepTitle(capability));
+    await executeStepInternal(set, get, step);
   },
 
-  retryStep: async (planStepId, stepTitle) => {
+  retryStep: async (step) => {
     const current = get();
     if (current.status === 'running') return;
     if (
@@ -272,8 +299,9 @@ export const useExecutionEngineStore = create<Store>((set, get) => ({
     ) {
       return;
     }
-    set({ selectedPlanStepId: planStepId });
-    await executeStepInternal(set, get, planStepId, stepTitle);
+    if (step.execution === undefined) return;
+    set({ selectedPlanStepId: step.id });
+    await executeStepInternal(set, get, step);
   },
 
   resetExecution: () => {
@@ -312,22 +340,24 @@ async function executeStepInternal(
       | ((s: ExecutionEngineStoreState) => Partial<ExecutionEngineStoreState>),
   ) => void,
   get: () => ExecutionEngineStoreState,
-  planStepId: string,
-  stepTitle: string,
+  step: InitializeStep,
 ): Promise<void> {
   const current = get();
   if (
     current.planId === undefined ||
     current.workspacePath === undefined ||
-    current.sourcePath === undefined
+    current.sourcePath === undefined ||
+    step.execution === undefined
   ) {
     return;
   }
 
+  const executionMetadata = step.execution;
+
   set({
     status: 'running',
-    selectedPlanStepId: planStepId,
-    stepStatuses: { ...current.stepStatuses, [planStepId]: 'running' },
+    selectedPlanStepId: step.id,
+    stepStatuses: { ...current.stepStatuses, [step.id]: 'running' },
     error: undefined,
   });
 
@@ -337,22 +367,24 @@ async function executeStepInternal(
       workspacePath: current.workspacePath,
       sourcePath: current.sourcePath,
       planId: current.planId,
-      planStepId,
-      stepTitle,
+      planStepId: step.id,
+      stepTitle: step.title,
+      execution: executionMetadata,
     });
   } catch (err) {
     const error = errorFromThrown(err);
     const after = get();
     const failedRun: ExecutionStepRun = {
-      id: `run:${planStepId}:${Date.now()}`,
+      id: `run:${step.id}:${Date.now()}`,
       planId: after.planId ?? '',
-      planStepId,
-      stepTitle,
+      planStepId: step.id,
+      stepTitle: step.title,
       workspacePath: after.workspacePath ?? '',
       status: 'failed',
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      executor: 'scripted',
+      executorKey: executionMetadata.executorKey ?? '',
+      mode: executionMetadata.mode,
       changedFiles: [],
       logs: [
         {
@@ -366,8 +398,8 @@ async function executeStepInternal(
     };
     set({
       status: 'failed',
-      stepStatuses: { ...after.stepStatuses, [planStepId]: 'failed' },
-      runs: { ...after.runs, [planStepId]: failedRun },
+      stepStatuses: { ...after.stepStatuses, [step.id]: 'failed' },
+      runs: { ...after.runs, [step.id]: failedRun },
       latestRun: failedRun,
       error,
     });
@@ -383,8 +415,8 @@ async function executeStepInternal(
 
   set({
     status,
-    stepStatuses: { ...after.stepStatuses, [planStepId]: stepStatus },
-    runs: { ...after.runs, [planStepId]: run },
+    stepStatuses: { ...after.stepStatuses, [step.id]: stepStatus },
+    runs: { ...after.runs, [step.id]: run },
     latestRun: run,
     error: run.error,
   });
@@ -397,7 +429,7 @@ async function executeStepInternal(
 }
 
 function pickInitialSelection(
-  planSteps: readonly { id: string; title: string }[],
+  planSteps: readonly InitializeStep[],
 ): string | undefined {
   const supported = planSteps.find((s) => isPotentiallyExecutable(s));
   if (supported !== undefined) return supported.id;
@@ -416,13 +448,6 @@ function deriveStatus(
   if (stepStatus === 'failed') return 'failed';
   if (stepStatus === 'pending') return 'ready';
   return 'idle';
-}
-
-function capabilityStepTitle(capability: ExecutionCapability): string {
-  if (capability.planStepId === NODE_SASS_PLAN_STEP_ID) {
-    return 'Replace node-sass with sass';
-  }
-  return capability.planStepId;
 }
 
 function errorFromThrown(err: unknown): ExecutionError {

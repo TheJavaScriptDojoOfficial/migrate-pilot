@@ -69,6 +69,52 @@ export type MigrationPlanComplexity = 'small' | 'medium' | 'large';
 /* Plan + Step                                                                */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Execution intent declared by the planner for a migration step.
+ *
+ * The planner describes *what kind of work* the step represents and, for
+ * scripted work, which generic executor should handle it. The execution
+ * engine never inspects step ids — it dispatches purely on
+ * {@link mode} + {@link executorKey}.
+ *
+ *   - `scripted`   → safe, deterministic, registered executor
+ *                    (e.g. `package-json-dependency-update`).
+ *   - `ai`         → requires AI source transformation (not implemented yet).
+ *   - `manual`     → must be performed by a human (review, decision, etc.).
+ *   - `validation` → only validation commands run, no source mutation.
+ *
+ * Future executor keys (illustrative, NOT implemented yet):
+ *
+ *   - `package-json-dependency-update`   ← only one shipped today
+ *   - `tsconfig-update`
+ *   - `file-create-or-update`
+ *   - `codemod-react-class-to-function`
+ *   - `react-router-modernization`
+ *   - `ai-source-transform`
+ *   - `manual-review`
+ */
+export type MigrationStepExecutionMode =
+  | 'scripted'
+  | 'ai'
+  | 'manual'
+  | 'validation';
+
+export interface MigrationStepExecution {
+  readonly mode: MigrationStepExecutionMode;
+  /**
+   * Stable identifier of the generic executor that handles this step.
+   * Required when `mode === 'scripted'`, optional otherwise (an AI / manual
+   * step may still hint at the future executor that will own it).
+   */
+  readonly executorKey?: string;
+  /**
+   * Free-form executor parameters. Each executor defines its own params
+   * schema (see the executor registry for the safe param contracts).
+   * Keep this `unknown` here — narrowing happens inside the executor.
+   */
+  readonly params?: Readonly<Record<string, unknown>>;
+}
+
 export interface MigrationStep {
   readonly id: string;
   /** 1-indexed position within the plan. Stable for the lifetime of the plan. */
@@ -92,6 +138,13 @@ export interface MigrationStep {
   readonly validationCommands?: readonly string[];
   /** Ordered ids of steps that must complete first. */
   readonly dependsOn?: readonly string[];
+  /**
+   * Optional execution metadata. Steps without this field are treated as
+   * "missing execution metadata" by the execution engine (no run button).
+   * Adding metadata is how a step opts into the generic execution
+   * framework — the step id is never used to decide executability.
+   */
+  readonly execution?: MigrationStepExecution;
 }
 
 /**

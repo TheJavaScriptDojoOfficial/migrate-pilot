@@ -158,12 +158,26 @@ export interface WorkspaceCreationResultRaw {
  * {@link import('@features/execution').ExecutionCapability} via
  * `executionService`.
  */
+export interface ExecutionRequestRaw {
+  /** `"scripted" | "ai" | "manual" | "validation"`. */
+  readonly mode: string;
+  /** Generic executor key (e.g. `"package-json-dependency-update"`). */
+  readonly executorKey?: string;
+  /** Free-form executor params; each executor validates its own schema. */
+  readonly params?: Record<string, unknown>;
+}
+
 export interface ExecutionCapabilityRaw {
   readonly planStepId: string;
   readonly executable: boolean;
-  /** Always `"scripted"` when `executable` is true. */
-  readonly executorType?: string | null;
+  /** Coarse classification used by the UI. See `ExecutionCapabilityBadge`. */
+  readonly badge?: string | null;
+  /** `"scripted" | "ai" | "manual" | "validation"` (when known). */
+  readonly mode?: string | null;
+  /** Generic executor key declared by the plan step (when known). */
+  readonly executorKey?: string | null;
   readonly reason: string;
+  readonly missingRequirements?: readonly string[];
 }
 
 export interface ExecutionLogEntryRaw {
@@ -197,8 +211,10 @@ export interface ExecutionStepRunRaw {
   readonly status: string;
   readonly startedAt: string;
   readonly completedAt?: string | null;
-  /** Always `"scripted"` in Milestone 6. */
-  readonly executor: string;
+  /** Generic executor key that produced this run. */
+  readonly executorKey: string;
+  /** `"scripted" | "ai" | "manual" | "validation"`. */
+  readonly mode: string;
   readonly changedFiles: readonly ExecutionChangedFileRaw[];
   readonly logs: readonly ExecutionLogEntryRaw[];
   readonly error?: ExecutionErrorRaw | null;
@@ -301,6 +317,7 @@ export interface CommandPayloads {
       sourcePath: string;
       planStepId: string;
       stepTitle: string;
+      execution: ExecutionRequestRaw;
     };
     output: ExecutionCapabilityRaw;
   };
@@ -311,6 +328,7 @@ export interface CommandPayloads {
       planId: string;
       planStepId: string;
       stepTitle: string;
+      execution: ExecutionRequestRaw;
     };
     output: ExecutionStepRunRaw;
   };

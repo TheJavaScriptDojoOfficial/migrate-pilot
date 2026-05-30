@@ -25,8 +25,14 @@ export {
 export {
   isPotentiallyExecutable,
   localExecutionPreCapability,
-  NODE_SASS_PLAN_STEP_ID,
 } from './services/executionCapabilityService';
+export {
+  EXECUTOR_REGISTRY,
+  getExecutorEntry,
+  isExecutorSupported,
+  listSupportedExecutorKeys,
+} from './services/executorRegistry';
+export type { ExecutorRegistryEntry } from './services/executorRegistry';
 export {
   ExecutionServiceError,
   checkExecutionCapability,
@@ -36,14 +42,16 @@ export {
 } from './services/executionService';
 export type {
   ExecutionCapability,
+  ExecutionCapabilityBadge,
   ExecutionChangeType,
   ExecutionChangedFile,
   ExecutionEngineState,
   ExecutionError,
-  ExecutionExecutorType,
   ExecutionLogEntry,
   ExecutionLogLevel,
   ExecutionStatus,
   ExecutionStepRun,
   ExecutionStepStatus,
+  MigrationStepExecution,
+  MigrationStepExecutionMode,
 } from './types/execution.types';

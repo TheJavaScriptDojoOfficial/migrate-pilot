@@ -11,17 +11,20 @@ import { Icon } from '@shared/ui/Icon';
 
 import type { MigrationStep } from '@features/migration-plan';
 
+import { getExecutorEntry } from '../services/executorRegistry';
 import type { ExecutionCapability } from '../types/execution.types';
 
 /**
  * ExecutionCapabilityCard — surfaces executor availability for the
  * currently selected plan step plus a clear safety notice.
  *
- * Three visual states:
+ * Visual states (driven by capability.badge, NOT by step id):
  *
- *   - Capability not yet probed → "Verify executor" CTA.
+ *   - Capability not yet probed → "Verify executor" CTA (scripted only).
  *   - Probed + executable       → green executor badge with reason.
- *   - Probed + not executable   → warning state with reason copy.
+ *   - Manual / validation / AI / unsupported / missing metadata
+ *                               → warning state with explanatory copy
+ *                                 and no run / verify actions.
  */
 export interface ExecutionCapabilityCardProps {
   readonly step: MigrationStep;
@@ -40,6 +43,15 @@ export function ExecutionCapabilityCard({
 }: ExecutionCapabilityCardProps): JSX.Element {
   const isExecutable = capability?.executable === true;
   const verified = capability !== undefined;
+  const executorKey =
+    capability?.executorKey ?? step.execution?.executorKey;
+  const executorEntry = getExecutorEntry(executorKey);
+  const executorLabel = executorEntry?.label ?? 'Generic executor';
+  const isScriptedCandidate =
+    step.execution?.mode === 'scripted' &&
+    executorEntry !== undefined &&
+    executorEntry.supported;
+  const showVerifyButton = isScriptedCandidate && !isExecutable;
 
   return (
     <Card accent={isExecutable}>
@@ -50,7 +62,7 @@ export function ExecutionCapabilityCard({
         </div>
         {isExecutable ? (
           <Badge tone="success" variant="soft" withDot>
-            Scripted executor available
+            {executorLabel} available
           </Badge>
         ) : verified ? (
           <Badge tone="warning" variant="soft" withDot>
@@ -67,14 +79,19 @@ export function ExecutionCapabilityCard({
         <div className="flex flex-col gap-2 text-xs text-ink-muted">
           {isExecutable ? (
             <p className="leading-relaxed">
-              The scripted executor will replace <code className="font-mono">node-sass</code>{' '}
-              with <code className="font-mono">sass</code> inside{' '}
-              <code className="font-mono">workspace/package.json</code>. No package
+              The <strong>{executorLabel}</strong> executor will run for this
+              step. It writes only inside{' '}
+              <code className="font-mono">workspace</code>; no package
               manager command is run, no lock file is updated, and no commit
               is created.
             </p>
           ) : verified ? (
             <p className="leading-relaxed">{capability?.reason}</p>
+          ) : step.execution === undefined ? (
+            <p className="leading-relaxed">
+              This step has no execution metadata. The plan generator did
+              not declare an executor for it; treat it as manual.
+            </p>
           ) : (
             <p className="leading-relaxed">
               Executor availability is verified against the actual workspace
@@ -82,7 +99,15 @@ export function ExecutionCapabilityCard({
               this step can execute right now.
             </p>
           )}
-          {!isExecutable ? (
+          {capability?.missingRequirements !== undefined &&
+          capability.missingRequirements.length > 0 ? (
+            <ul className="list-inside list-disc text-2xs leading-relaxed">
+              {capability.missingRequirements.map((requirement) => (
+                <li key={requirement}>{requirement}</li>
+              ))}
+            </ul>
+          ) : null}
+          {showVerifyButton ? (
             <Button
               variant="secondary"
               size="sm"

@@ -38,6 +38,8 @@ export type {
   MigrationPlanSummary,
   MigrationStep,
   MigrationStepCategory,
+  MigrationStepExecution,
+  MigrationStepExecutionMode,
   MigrationStepRisk,
   MigrationStepStatus,
 } from './types/migrationPlan.types';
