@@ -22,6 +22,7 @@ import type {
   React19PlanPhaseSummary,
   React19ValidationStrategy,
 } from '../types/migrationPlan.types';
+import { resolveMigrationPlanStepRunRequirements } from '../types/migrationPlan.types';
 
 const VALIDATION_SCRIPT_PRIORITY = ['build', 'test', 'lint', 'typecheck'] as const;
 const SUPPORTED_SCRIPTED_EXECUTOR_KEYS = new Set<string>(['package-json-dependency-update']);
@@ -167,6 +168,7 @@ export function buildReact19PlanStepsFromRiskEngine(
   let order = 1;
 
   if (validationStrategy.baselineCommands.length > 0) {
+    const runRequirements = resolveMigrationPlanStepRunRequirements('validation-only');
     const resolution = resolveExecutorMetadata({
       stepId: 'react19.validation.baseline',
       phase: 'validation',
@@ -198,9 +200,9 @@ export function buildReact19PlanStepsFromRiskEngine(
       ...(resolution.blockedReason !== undefined
         ? { blockedReason: resolution.blockedReason }
         : {}),
-      requiresWorkspace: true,
-      requiresApprovalBeforeRun: false,
-      requiresValidationAfterRun: false,
+      requiresWorkspace: runRequirements.requiresWorkspace,
+      requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
+      requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
       expectedCommands: validationStrategy.baselineCommands,
       validationCommands: validationStrategy.baselineCommands,
       rollbackStrategy: 'manual',
@@ -218,6 +220,7 @@ export function buildReact19PlanStepsFromRiskEngine(
   }
 
   if (validationStrategy.finalCommands.length > 0) {
+    const runRequirements = resolveMigrationPlanStepRunRequirements('validation-only');
     const resolution = resolveExecutorMetadata({
       stepId: 'react19.validation.final',
       phase: 'validation',
@@ -248,9 +251,9 @@ export function buildReact19PlanStepsFromRiskEngine(
       ...(resolution.blockedReason !== undefined
         ? { blockedReason: resolution.blockedReason }
         : {}),
-      requiresWorkspace: true,
-      requiresApprovalBeforeRun: false,
-      requiresValidationAfterRun: false,
+      requiresWorkspace: runRequirements.requiresWorkspace,
+      requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
+      requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
       expectedCommands: validationStrategy.finalCommands,
       validationCommands: validationStrategy.finalCommands,
       rollbackStrategy: 'manual',
@@ -273,6 +276,7 @@ export function buildReact19PlanStepsFromRiskEngine(
     finalReviewResolution.executorKey,
     finalReviewResolution.params,
   );
+  const finalReviewRequirements = resolveMigrationPlanStepRunRequirements('manual');
   steps.push({
     id: 'react19.final-review.signoff',
     order: order++,
@@ -292,9 +296,9 @@ export function buildReact19PlanStepsFromRiskEngine(
     ...(finalReviewResolution.blockedReason !== undefined
       ? { blockedReason: finalReviewResolution.blockedReason }
       : {}),
-    requiresWorkspace: true,
-    requiresApprovalBeforeRun: true,
-    requiresValidationAfterRun: false,
+    requiresWorkspace: finalReviewRequirements.requiresWorkspace,
+    requiresApprovalBeforeRun: finalReviewRequirements.requiresApprovalBeforeRun,
+    requiresValidationAfterRun: finalReviewRequirements.requiresValidationAfterRun,
     expectedCommands: validationStrategy.finalCommands,
     validationCommands: validationStrategy.finalCommands,
     rollbackStrategy: 'manual',
@@ -564,6 +568,7 @@ function createGroupedStep(
   const executionType: MigrationPlanStepV2ExecutionType =
     config.forceExecutionType ??
     resolveStepExecutionType(items.map((item) => item.executionCapability));
+  const runRequirements = resolveMigrationPlanStepRunRequirements(executionType);
   const sourceIssueCodes = Array.from(
     new Set(
       items.flatMap((item) => [item.sourceIssueCode, ...(item.relatedIssueCodes ?? [])]).filter(Boolean),
@@ -581,13 +586,14 @@ function createGroupedStep(
 
   const requiresHumanReview =
     config.forceHumanReview ??
-    items.some(
-      (item) =>
-        item.executionCapability === 'manual' ||
-        item.executionCapability === 'ai-assisted' ||
-        item.riskLevel === 'blocker' ||
-        item.riskLevel === 'high',
-    );
+    (runRequirements.requiresApprovalBeforeRun ||
+      items.some(
+        (item) =>
+          item.executionCapability === 'manual' ||
+          item.executionCapability === 'ai-assisted' ||
+          item.riskLevel === 'blocker' ||
+          item.riskLevel === 'high',
+      ));
 
   const executorResolution = resolveExecutorMetadata({
     stepId: id,
@@ -629,9 +635,9 @@ function createGroupedStep(
       : {}),
     capability,
     ...(blockedReason !== undefined ? { blockedReason } : {}),
-    requiresWorkspace: true,
-    requiresApprovalBeforeRun: requiresHumanReview,
-    requiresValidationAfterRun: validationCommands.length > 0,
+    requiresWorkspace: runRequirements.requiresWorkspace,
+    requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
+    requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
     expectedChangedFiles: expectedFilesForIssueCodes(sourceIssueCodes),
     expectedCommands: validationCommands,
     validationCommands,

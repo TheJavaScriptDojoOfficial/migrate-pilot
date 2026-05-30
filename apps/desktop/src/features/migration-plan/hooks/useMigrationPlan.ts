@@ -32,6 +32,7 @@ import type {
   MigrationPlanState,
   MigrationPlanStatus,
 } from '../types/migrationPlan.types';
+import { resolveMigrationPlanStepRunRequirements } from '../types/migrationPlan.types';
 
 const WORKFLOW_STEP_ID = 'plan';
 
@@ -110,7 +111,7 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
 
     let plan: MigrationPlan;
     try {
-      plan = generateMigrationPlan(scanReport);
+      plan = normalizePlanForStoreCompatibility(generateMigrationPlan(scanReport));
     } catch (err) {
       set({
         status: 'error',
@@ -215,3 +216,26 @@ export function selectHasDraftPlan(s: MigrationPlanStoreState): boolean {
 /* -------------------------------------------------------------------------- */
 
 export type { MigrationPlanState };
+
+function normalizePlanForStoreCompatibility(plan: MigrationPlan): MigrationPlan {
+  const normalizedSteps = plan.steps.map((step) => {
+    const runRequirements = resolveMigrationPlanStepRunRequirements(step.executionType);
+    const compatibilityStep = step as typeof step & {
+      requiresWorkspace?: boolean;
+      requiresApprovalBeforeRun?: boolean;
+      requiresValidationAfterRun?: boolean;
+    };
+    return {
+      ...step,
+      requiresWorkspace: compatibilityStep.requiresWorkspace ?? runRequirements.requiresWorkspace,
+      requiresApprovalBeforeRun:
+        compatibilityStep.requiresApprovalBeforeRun ?? runRequirements.requiresApprovalBeforeRun,
+      requiresValidationAfterRun:
+        compatibilityStep.requiresValidationAfterRun ?? runRequirements.requiresValidationAfterRun,
+    };
+  });
+  return {
+    ...plan,
+    steps: normalizedSteps,
+  };
+}

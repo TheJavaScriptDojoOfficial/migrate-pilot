@@ -52,7 +52,25 @@ export function MigrationPlanStepCard({
               <Icon name="check-circle" className="h-3 w-3" />
               Human approval
             </Badge>
-          ) : null}
+          ) : (
+            <Badge tone="success" variant="soft" uppercase>
+              No approval gate
+            </Badge>
+          )}
+          <Badge
+            tone={step.requiresWorkspace ? 'info' : 'neutral'}
+            variant="soft"
+            uppercase
+          >
+            {step.requiresWorkspace ? 'Workspace required' : 'No workspace required'}
+          </Badge>
+          <Badge
+            tone={step.requiresValidationAfterRun ? 'warning' : 'neutral'}
+            variant="soft"
+            uppercase
+          >
+            {step.requiresValidationAfterRun ? 'Post-run validation required' : 'No post-run validation'}
+          </Badge>
           <Badge tone={STEP_STATUS_TONE[step.status]} variant="outline" uppercase>
             {step.status}
           </Badge>

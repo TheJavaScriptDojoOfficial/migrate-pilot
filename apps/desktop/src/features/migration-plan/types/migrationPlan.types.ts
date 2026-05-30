@@ -39,6 +39,67 @@ export type MigrationPlanStepV2RollbackStrategy =
   | 'discard-worktree-changes'
   | 'manual';
 
+export interface MigrationPlanStepRunRequirements {
+  readonly requiresWorkspace: boolean;
+  readonly requiresApprovalBeforeRun: boolean;
+  readonly requiresValidationAfterRun: boolean;
+}
+
+export function isValidationOnlyPlanStepExecutionType(
+  executionType: MigrationPlanStepV2ExecutionType,
+): boolean {
+  return executionType === 'validation-only';
+}
+
+export function isManualOnlyPlanStepExecutionType(
+  executionType: MigrationPlanStepV2ExecutionType,
+): boolean {
+  return executionType === 'manual';
+}
+
+export function isFileChangingPlanStepExecutionType(
+  executionType: MigrationPlanStepV2ExecutionType,
+): boolean {
+  return (
+    executionType === 'scripted' ||
+    executionType === 'codemod' ||
+    executionType === 'ai-assisted'
+  );
+}
+
+/**
+ * Canonical step run requirements (R5 Step 7).
+ *
+ * - File-changing steps require workspace + approval + post-run validation.
+ * - Validation-only steps require workspace but no approval or post-run
+ *   validation gate.
+ * - Manual-only steps require explicit approval, but do not require command
+ *   execution and therefore do not force workspace/validation gates.
+ */
+export function resolveMigrationPlanStepRunRequirements(
+  executionType: MigrationPlanStepV2ExecutionType,
+): MigrationPlanStepRunRequirements {
+  if (isValidationOnlyPlanStepExecutionType(executionType)) {
+    return {
+      requiresWorkspace: true,
+      requiresApprovalBeforeRun: false,
+      requiresValidationAfterRun: false,
+    };
+  }
+  if (isManualOnlyPlanStepExecutionType(executionType)) {
+    return {
+      requiresWorkspace: false,
+      requiresApprovalBeforeRun: true,
+      requiresValidationAfterRun: false,
+    };
+  }
+  return {
+    requiresWorkspace: true,
+    requiresApprovalBeforeRun: true,
+    requiresValidationAfterRun: true,
+  };
+}
+
 /**
  * Planner/Executor contract V2.
  *

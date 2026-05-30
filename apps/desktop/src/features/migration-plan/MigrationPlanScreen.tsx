@@ -513,6 +513,22 @@ function PlanStepsCard({
                 >
                   {step.requiresApprovalBeforeRun ? 'Approval required' : 'No approval gate'}
                 </Badge>
+                <Badge
+                  tone={step.requiresWorkspace ? 'info' : 'neutral'}
+                  variant="soft"
+                  uppercase
+                >
+                  {step.requiresWorkspace ? 'Workspace required' : 'No workspace required'}
+                </Badge>
+                <Badge
+                  tone={step.requiresValidationAfterRun ? 'warning' : 'neutral'}
+                  variant="soft"
+                  uppercase
+                >
+                  {step.requiresValidationAfterRun
+                    ? 'Post-run validation required'
+                    : 'No post-run validation gate'}
+                </Badge>
               </div>
               <p className="mt-2 text-xs text-ink-muted">{step.description}</p>
               <p className="mt-2 text-2xs text-ink-subtle">

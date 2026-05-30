@@ -49,7 +49,7 @@ export function estimatePlanRisk(
 
 /**
  * Count the number of approval gates in a plan — i.e. steps whose
- * `approvalRequired` flag is true. Surfaced in the plan summary so the user
+ * `requiresApprovalBeforeRun` flag is true. Surfaced in the plan summary so the user
  * can see at a glance how many human checkpoints to expect.
  */
 export function countApprovalGates(steps: readonly MigrationStep[]): number {
