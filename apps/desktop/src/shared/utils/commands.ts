@@ -16,7 +16,6 @@ import type { MigrationSession } from '@shared/types/migrationSession';
 import type { MigrationStep } from '@shared/types/migrationStep';
 import type { ScanReport } from '@shared/types/scanReport';
 import type { ValidationResult } from '@shared/types/validationResult';
-import type { GitWorkspace } from '@shared/types/gitWorkspace';
 
 /**
  * Raw payload returned by the read-only `project_read_metadata` Tauri
@@ -98,6 +97,57 @@ export interface ProjectScanLimitsRaw {
   readonly truncated: boolean;
 }
 
+/**
+ * Raw payload returned by the read-only `workspace_preflight` Tauri command
+ * (Milestone 5). Mirrors `WorkspacePreflightRaw` in
+ * `src-tauri/src/commands/workspace.rs`. The UI never consumes this
+ * directly — the workspace feature converts it into the strongly-typed
+ * {@link import('@features/workspace').WorkspacePreflight} via
+ * `workspaceService.runPreflight`.
+ */
+export interface WorkspaceIssueRaw {
+  readonly code: string;
+  readonly severity: string;
+  readonly message: string;
+  readonly detail?: string;
+}
+
+export interface WorkspacePreflightRaw {
+  readonly sourcePath: string;
+  readonly projectName: string;
+  readonly isGitRepository: boolean;
+  readonly gitAvailable: boolean;
+  readonly currentBranch?: string | null;
+  /** `"clean" | "dirty" | "unknown"`. */
+  readonly gitCleanliness: string;
+  /** `"git-worktree" | "copy"`. */
+  readonly recommendedStrategy: string;
+  readonly fallbackAvailable: boolean;
+  readonly proposedBranchName: string;
+  readonly proposedWorkspacePath: string;
+  readonly blockers: readonly WorkspaceIssueRaw[];
+  readonly warnings: readonly WorkspaceIssueRaw[];
+}
+
+export interface WorkspaceCommandLogRaw {
+  readonly command: string;
+  /** `"passed" | "failed"`. */
+  readonly status: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+}
+
+export interface WorkspaceCreationResultRaw {
+  readonly id: string;
+  readonly sourcePath: string;
+  readonly workspacePath: string;
+  /** `"git-worktree" | "copy"`. */
+  readonly strategy: string;
+  readonly branchName?: string | null;
+  readonly createdAt: string;
+  readonly commandLogs: readonly WorkspaceCommandLogRaw[];
+}
+
 export interface CommandPayloads {
   project_select: {
     input: { suggestedPath?: string };
@@ -123,9 +173,18 @@ export interface CommandPayloads {
     input: { sessionId: string };
     output: ScanReport;
   };
+  workspace_preflight: {
+    input: { sourcePath: string; projectName: string };
+    output: WorkspacePreflightRaw;
+  };
   workspace_create: {
-    input: { sessionId: string };
-    output: GitWorkspace;
+    input: {
+      sourcePath: string;
+      workspacePath: string;
+      branchName: string;
+      strategy: 'git-worktree' | 'copy';
+    };
+    output: WorkspaceCreationResultRaw;
   };
   step_execute: {
     input: { sessionId: string; stepId: string };
