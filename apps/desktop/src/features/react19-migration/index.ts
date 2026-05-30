@@ -9,12 +9,23 @@
  */
 export type {
   React19MigrationContext,
+  React19SupportReasonCode,
+  React19SupportStatus,
   ReactMigrationPhase,
   ReactMigrationSourceMajor,
   ReactMigrationTargetMajor,
   ReactMigrationTrack,
 } from './types/react19Migration.types';
 export {
+  REACT_MIGRATION_PHASES_BY_TRACK,
   REACT_MIGRATION_PHASES_ORDERED,
   REACT_MIGRATION_TARGET_MAJOR,
 } from './types/react19Migration.types';
+export {
+  computeReact19MigrationContext,
+  parseReactMajor,
+} from './services/react19MigrationContextService';
+export type {
+  React19MigrationContextInput,
+  React19MigrationContextResult,
+} from './services/react19MigrationContextService';

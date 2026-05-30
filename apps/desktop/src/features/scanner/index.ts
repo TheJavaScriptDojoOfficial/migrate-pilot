@@ -16,6 +16,7 @@ export {
 export {
   ScanDependencyCard,
 } from './components/ScanDependencyCard';
+export { ScanReact19ContextCard } from './components/ScanReact19ContextCard';
 export { ScanRecommendations } from './components/ScanRecommendations';
 export { ScanRiskCard } from './components/ScanRiskCard';
 export { ScanSourceAnalysisCard } from './components/ScanSourceAnalysisCard';

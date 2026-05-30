@@ -152,3 +152,116 @@ export const REACT_MIGRATION_PHASES_ORDERED: readonly ReactMigrationPhase[] = [
   'validation',
   'final-review',
 ];
+
+/**
+ * Recommended phases per migration track.
+ *
+ * React 16 / 17 → React 19 routes through React 18, so the
+ * `react-18-bridge` phase is required. React 18 → React 19 is a direct
+ * upgrade and skips the bridge.
+ *
+ * The arrays are deliberately frozen-shaped (`readonly`) and ordered so
+ * the UI and the future planner can render the same sequence without
+ * re-sorting.
+ */
+export const REACT_MIGRATION_PHASES_BY_TRACK: Readonly<
+  Record<ReactMigrationTrack, readonly ReactMigrationPhase[]>
+> = {
+  'react-16-to-19': [
+    'preflight',
+    'tooling',
+    'react-18-bridge',
+    'api-compatibility',
+    'jsx-transform',
+    'react-19-upgrade',
+    'source-modernization',
+    'validation',
+    'final-review',
+  ],
+  'react-17-to-19': [
+    'preflight',
+    'tooling',
+    'react-18-bridge',
+    'api-compatibility',
+    'jsx-transform',
+    'react-19-upgrade',
+    'source-modernization',
+    'validation',
+    'final-review',
+  ],
+  'react-18-to-19': [
+    'preflight',
+    'tooling',
+    'api-compatibility',
+    'jsx-transform',
+    'react-19-upgrade',
+    'source-modernization',
+    'validation',
+    'final-review',
+  ],
+};
+
+/* -------------------------------------------------------------------------- */
+/* Support status                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Stable codes describing why React 19 migration planning is or is not
+ * supported for the scanned project. Switched exhaustively by the UI so
+ * each blocker can render a tailored copy line.
+ *
+ *   `supported`                Source major is 16, 17, or 18 — migration
+ *                              planning can proceed.
+ *   `package-json-missing`     The deterministic scanner could not locate
+ *                              `package.json`.
+ *   `react-not-found`          `package.json` parsed but neither
+ *                              `dependencies` nor `devDependencies`
+ *                              declared `react`.
+ *   `react-version-unparseable`
+ *                              A `react` entry exists but its version
+ *                              string did not yield a numeric major.
+ *   `react-major-below-minimum`
+ *                              Detected React major is below 16
+ *                              (e.g. 0.x / 15.x).
+ *   `react-major-above-target`
+ *                              Detected React major is above 19 (a
+ *                              future React version we do not plan for).
+ *   `react-major-is-target`    Project already runs React 19 — nothing
+ *                              to migrate.
+ *   `react-dom-major-mismatch` `react` and `react-dom` declare different
+ *                              majors. The migration cannot proceed
+ *                              until they agree.
+ */
+export type React19SupportReasonCode =
+  | 'supported'
+  | 'package-json-missing'
+  | 'react-not-found'
+  | 'react-version-unparseable'
+  | 'react-major-below-minimum'
+  | 'react-major-above-target'
+  | 'react-major-is-target'
+  | 'react-dom-major-mismatch';
+
+/**
+ * Structured status describing whether a project qualifies for the V1
+ * React 19 migration path.
+ *
+ * `isSupported` is `true` only when the source React major is 16, 17, or
+ * 18 AND (when declared) `react-dom`'s major matches `react`'s. In every
+ * other case `isSupported` is `false` and `reason` explains why so the
+ * report can surface a clear "migration blocked" message instead of
+ * pretending a plan can be generated.
+ *
+ * The `sourceReactVersion` / `sourceReactMajor` / `reactDomVersion` /
+ * `reactDomMajor` fields are mirrored on both the supported and the
+ * unsupported branch so consumers always have the same shape to read.
+ */
+export interface React19SupportStatus {
+  readonly isSupported: boolean;
+  readonly code: React19SupportReasonCode;
+  readonly reason?: string;
+  readonly sourceReactVersion?: string;
+  readonly sourceReactMajor?: number;
+  readonly reactDomVersion?: string;
+  readonly reactDomMajor?: number;
+}

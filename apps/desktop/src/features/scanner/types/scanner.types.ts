@@ -12,6 +12,10 @@
  */
 
 import type { PackageManager } from '@features/project-selection';
+import type {
+  React19MigrationContext,
+  React19SupportStatus,
+} from '@features/react19-migration';
 
 /* -------------------------------------------------------------------------- */
 /* State machine                                                              */
@@ -220,6 +224,22 @@ export interface ScanReport {
   readonly scripts: ScriptReport;
   readonly risks: RiskReport;
   readonly recommendations: readonly Recommendation[];
+  /**
+   * React 19 migration context — present iff the project is a supported
+   * React 16 / 17 / 18 source. Consumers should fall back to
+   * `react19SupportStatus.reason` when this is absent.
+   *
+   * Optional for backward compatibility with consumers compiled against
+   * the pre-R2 `ScanReport` shape; the current scanner always populates
+   * it together with `react19SupportStatus`.
+   */
+  readonly react19MigrationContext?: React19MigrationContext;
+  /**
+   * Structured outcome describing whether a React 19 migration can be
+   * planned for this project. Always populated by the current scanner;
+   * marked optional so older serialised reports still satisfy the type.
+   */
+  readonly react19SupportStatus?: React19SupportStatus;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -15,6 +15,7 @@ import { useSessionStore } from '@shared/hooks/useSessionState';
 
 import { ScanActionBar } from './components/ScanActionBar';
 import { ScanDependencyCard } from './components/ScanDependencyCard';
+import { ScanReact19ContextCard } from './components/ScanReact19ContextCard';
 import { ScanRecommendations } from './components/ScanRecommendations';
 import { ScanRiskCard } from './components/ScanRiskCard';
 import { ScanSourceAnalysisCard } from './components/ScanSourceAnalysisCard';
@@ -362,6 +363,14 @@ function CompletedReport({
   return (
     <>
       <ScanSummaryCard report={report} />
+      <ScanReact19ContextCard
+        {...(report.react19MigrationContext !== undefined
+          ? { context: report.react19MigrationContext }
+          : {})}
+        {...(report.react19SupportStatus !== undefined
+          ? { status: report.react19SupportStatus }
+          : {})}
+      />
       <ScanRiskCard risks={report.risks} />
       <ScanDependencyCard
         dependencies={report.dependencies}

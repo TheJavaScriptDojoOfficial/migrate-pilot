@@ -26,6 +26,7 @@ import { buildRecommendations } from './scannerRecommendationService';
 import { buildRiskReport } from './scannerRiskService';
 
 import type { PackageManager } from '@features/project-selection';
+import { computeReact19MigrationContext } from '@features/react19-migration';
 import type {
   DependencyReport,
   DeprecatedLifecycleUsage,
@@ -133,6 +134,18 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
     durationMs: raw.durationMs,
   };
 
+  // R2 step 1 — React 19 migration context. Pure, deterministic; uses
+  // only the version strings the scanner already extracted.
+  const react19 = computeReact19MigrationContext({
+    packageJsonPresent: raw.packageJsonText !== null,
+    ...(dependencies.reactVersion !== undefined
+      ? { reactVersion: dependencies.reactVersion }
+      : {}),
+    ...(dependencies.reactDomVersion !== undefined
+      ? { reactDomVersion: dependencies.reactDomVersion }
+      : {}),
+  });
+
   return {
     id: makeReportId(raw),
     projectPath: raw.path,
@@ -143,6 +156,10 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
     scripts,
     risks,
     recommendations,
+    ...(react19.context !== undefined
+      ? { react19MigrationContext: react19.context }
+      : {}),
+    react19SupportStatus: react19.status,
   };
 }
 
