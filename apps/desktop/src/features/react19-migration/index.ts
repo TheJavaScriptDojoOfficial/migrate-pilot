@@ -82,3 +82,33 @@ export {
   resolveReact19PlanGenerationGate,
 } from './services/react19ReadinessReportViewModel';
 export type { React19ReadinessReportInput } from './services/react19ReadinessReportViewModel';
+/* React 19 risk/recommendation engine (R3) */
+export type {
+  React19ExecutionCapability,
+  React19MigrationPhase,
+  React19MigrationRiskLevel,
+  React19RiskEngineResult,
+  React19RiskEngineSummary,
+  React19RiskRecommendation,
+  React19RiskRecommendationsByPhase,
+  React19ValidationRequirement,
+} from './types/react19RiskRecommendation.types';
+export {
+  REACT19_EXECUTION_CAPABILITY_DISPLAY_NAMES,
+  REACT19_MIGRATION_PHASES_ORDERED,
+  REACT19_PHASE_DISPLAY_NAMES,
+  REACT19_RISK_RULES,
+  getReact19DefaultExecutionCapabilityForCategory,
+  getReact19DefaultValidationForCategory,
+  getReact19FallbackPhaseForCategory,
+  mapReact19SeverityToRiskLevel,
+} from './constants/react19RiskRules';
+export type { React19RiskRuleTemplate } from './constants/react19RiskRules';
+export {
+  buildReact19RiskEngine,
+  getReact19ExecutionCapabilityDisplayName,
+  getReact19PhaseDisplayName,
+  groupReact19RiskRecommendationsByPhase,
+  mapReact19IssueToRiskRecommendation,
+  summarizeReact19RiskRecommendations,
+} from './services/react19RiskRecommendationEngine';

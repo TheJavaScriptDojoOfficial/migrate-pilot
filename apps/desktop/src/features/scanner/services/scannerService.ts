@@ -27,6 +27,7 @@ import { buildRiskReport } from './scannerRiskService';
 
 import type { PackageManager } from '@features/project-selection';
 import {
+  buildReact19RiskEngine,
   computeReact19CompatibilityReport,
   computeReact19MigrationContext,
   buildReact19ReadinessReportViewModel,
@@ -195,12 +196,18 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
     react19CompatibilityReport: compatibilityReport,
   };
 
+  const react19RiskEngine = buildReact19RiskEngine(scanReportBase as ScanReport);
+
   const react19ReadinessReport = buildReact19ReadinessReportViewModel({
-    scanReport: scanReportBase as ScanReport,
+    scanReport: {
+      ...(scanReportBase as ScanReport),
+      react19RiskEngine,
+    },
   });
 
   return {
     ...scanReportBase,
+    react19RiskEngine,
     react19ReadinessReport,
   };
 }

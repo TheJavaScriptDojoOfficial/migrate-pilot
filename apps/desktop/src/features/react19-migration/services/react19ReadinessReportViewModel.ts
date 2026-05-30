@@ -12,6 +12,7 @@ import {
   REACT19_ISSUE_CODE_METADATA,
   getReact19IssueDisplayLabel,
 } from '../constants/react19IssueCodes';
+import { buildReact19RiskEngine } from './react19RiskRecommendationEngine';
 import type {
   React19CompatibilityCategory,
   React19CompatibilityCategoryReport,
@@ -19,6 +20,11 @@ import type {
   React19CompatibilityIssue,
   React19CompatibilityReport,
 } from '../types/react19Compatibility.types';
+import type {
+  React19MigrationPhase,
+  React19RiskEngineResult,
+  React19RiskRecommendation,
+} from '../types/react19RiskRecommendation.types';
 import type {
   React19ReadinessIssueItem,
   React19ReadinessOverallStatus,
@@ -53,6 +59,7 @@ export function buildReact19ReadinessReportViewModel(
 ): React19ReadinessReportViewModel {
   const { scanReport } = input;
   const compatibility = scanReport.react19CompatibilityReport;
+  const riskEngine = resolveRiskEngine(scanReport);
   const support = scanReport.react19SupportStatus;
   const context = scanReport.react19MigrationContext;
 
@@ -77,17 +84,20 @@ export function buildReact19ReadinessReportViewModel(
 
   const readinessScore = computeReadinessScore(
     compatibility,
+    riskEngine,
     blockers.length,
     planGate.canGeneratePlan,
   );
   const riskLevel = scoreToRiskLevel(readinessScore);
   const phaseReadiness = buildPhaseReadiness(
     compatibility,
+    riskEngine,
     planGate.canGeneratePlan,
     migrationTrack,
   );
   const recommendations = buildRecommendations(
     compatibility?.issues ?? [],
+    riskEngine,
     scanReport.recommendations,
   );
   const validationCommands = buildValidationCommands(scanReport);
@@ -278,6 +288,7 @@ const INVALID_CONTEXT_PENALTY = 40;
 
 function computeReadinessScore(
   compatibility: React19CompatibilityReport | undefined,
+  riskEngine: React19RiskEngineResult | undefined,
   extraBlockers: number,
   canGeneratePlan: boolean,
 ): number {
@@ -289,6 +300,11 @@ function computeReadinessScore(
     score -= summary.highCount * HIGH_PENALTY;
     score -= summary.mediumCount * MEDIUM_PENALTY;
     score -= summary.lowCount * LOW_PENALTY;
+  } else if (riskEngine !== undefined) {
+    score -= riskEngine.summary.blockers * BLOCKER_PENALTY;
+    score -= riskEngine.summary.high * HIGH_PENALTY;
+    score -= riskEngine.summary.medium * MEDIUM_PENALTY;
+    score -= riskEngine.summary.low * LOW_PENALTY;
   }
 
   score -= extraBlockers * BLOCKER_PENALTY;
@@ -376,9 +392,18 @@ const PHASE_DEFINITIONS: readonly PhaseDefinition[] = [
 
 function buildPhaseReadiness(
   compatibility: React19CompatibilityReport | undefined,
+  riskEngine: React19RiskEngineResult | undefined,
   canGeneratePlan: boolean,
   migrationTrack: ReactMigrationTrack | undefined,
 ): readonly React19ReadinessPhaseCard[] {
+  if (riskEngine !== undefined && riskEngine.items.length > 0) {
+    return buildPhaseReadinessFromRiskEngine(
+      riskEngine,
+      canGeneratePlan,
+      migrationTrack,
+    );
+  }
+
   const categoryMap = new Map<React19CompatibilityCategory, React19CompatibilityCategoryReport>();
   if (compatibility !== undefined) {
     for (const row of compatibility.categories) {
@@ -415,6 +440,51 @@ function buildPhaseReadiness(
       categories: phase.categories,
     };
   });
+}
+
+function buildPhaseReadinessFromRiskEngine(
+  riskEngine: React19RiskEngineResult,
+  canGeneratePlan: boolean,
+  migrationTrack: ReactMigrationTrack | undefined,
+): readonly React19ReadinessPhaseCard[] {
+  return PHASE_DEFINITIONS.map((phase) => {
+    const mapped = PHASE_TO_RISK_PHASES[phase.id];
+    const items = mapped.flatMap((riskPhase) => riskEngine.byPhase[riskPhase] ?? []);
+    const issueCount = items.length;
+    const status = riskItemsToPhaseStatus(items, issueCount);
+
+    const adjustedStatus =
+      phase.id === 'react-version' && !canGeneratePlan
+        ? 'blocked'
+        : phase.id === 'react-dom-version' &&
+            !canGeneratePlan &&
+            migrationTrack === undefined
+          ? 'blocked'
+          : status;
+
+    return {
+      id: phase.id,
+      title: phase.title,
+      description: phase.description,
+      status: adjustedStatus,
+      issueCount,
+      categories: phase.categories,
+    };
+  });
+}
+
+function riskItemsToPhaseStatus(
+  items: readonly React19RiskRecommendation[],
+  issueCount: number,
+): React19ReadinessPhaseStatus {
+  if (items.some((item) => item.riskLevel === 'blocker')) return 'blocked';
+  if (items.some((item) => item.riskLevel === 'high' || item.riskLevel === 'medium')) {
+    return 'warning';
+  }
+  if (items.some((item) => item.riskLevel === 'low' || item.riskLevel === 'info')) {
+    return issueCount === 0 ? 'ready' : 'warning';
+  }
+  return issueCount === 0 ? 'ready' : 'unknown';
 }
 
 function worstCategoryStatus(
@@ -456,30 +526,48 @@ function categoryStatusToPhaseStatus(
 
 function buildRecommendations(
   issues: readonly React19CompatibilityIssue[],
+  riskEngine: React19RiskEngineResult | undefined,
   legacyRecommendations: ScanReport['recommendations'],
 ): readonly React19ReadinessRecommendationItem[] {
   const seen = new Set<string>();
   const out: React19ReadinessRecommendationItem[] = [];
 
-  for (const issue of issues) {
-    if (issue.severity === 'info') continue;
+  if (riskEngine !== undefined && riskEngine.items.length > 0) {
+    for (const risk of riskEngine.items) {
+      if (risk.riskLevel === 'info') continue;
+      const key = risk.canonicalCode ?? risk.sourceIssueCode;
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-    const key = issue.canonicalCode ?? issue.code;
-    if (seen.has(key)) continue;
-    seen.add(key);
+      out.push({
+        id: key,
+        label: risk.title,
+        detail: risk.recommendation,
+        ...(risk.canonicalCode !== undefined ? { canonicalCode: risk.canonicalCode } : {}),
+        priority: riskLevelToPriority(risk.riskLevel),
+      });
+    }
+  } else {
+    for (const issue of issues) {
+      if (issue.severity === 'info') continue;
 
-    const meta =
-      issue.canonicalCode !== undefined
-        ? REACT19_ISSUE_CODE_METADATA[issue.canonicalCode]
-        : undefined;
+      const key = issue.canonicalCode ?? issue.code;
+      if (seen.has(key)) continue;
+      seen.add(key);
 
-    out.push({
-      id: key,
-      label: getReact19IssueDisplayLabel(issue),
-      detail: meta?.defaultRecommendation ?? issue.recommendation,
-      ...(issue.canonicalCode !== undefined ? { canonicalCode: issue.canonicalCode } : {}),
-      priority: severityToPriority(issue.severity),
-    });
+      const meta =
+        issue.canonicalCode !== undefined
+          ? REACT19_ISSUE_CODE_METADATA[issue.canonicalCode]
+          : undefined;
+
+      out.push({
+        id: key,
+        label: getReact19IssueDisplayLabel(issue),
+        detail: meta?.defaultRecommendation ?? issue.recommendation,
+        ...(issue.canonicalCode !== undefined ? { canonicalCode: issue.canonicalCode } : {}),
+        priority: severityToPriority(issue.severity),
+      });
+    }
   }
 
   for (const rec of legacyRecommendations) {
@@ -525,6 +613,47 @@ function priorityRank(priority: React19ReadinessRecommendationItem['priority']):
       return 1;
   }
 }
+
+function riskLevelToPriority(
+  riskLevel: React19RiskRecommendation['riskLevel'],
+): React19ReadinessRecommendationItem['priority'] {
+  switch (riskLevel) {
+    case 'blocker':
+    case 'high':
+      return 'high';
+    case 'medium':
+      return 'medium';
+    case 'low':
+    case 'info':
+      return 'low';
+  }
+}
+
+function resolveRiskEngine(scanReport: ScanReport): React19RiskEngineResult | undefined {
+  if (scanReport.react19RiskEngine !== undefined) {
+    return scanReport.react19RiskEngine;
+  }
+  const hasReact19Data =
+    scanReport.react19CompatibilityReport !== undefined ||
+    scanReport.react19MigrationContext !== undefined ||
+    scanReport.react19SupportStatus !== undefined;
+  if (!hasReact19Data) return undefined;
+  return buildReact19RiskEngine(scanReport);
+}
+
+const PHASE_TO_RISK_PHASES: Readonly<
+  Record<React19ReadinessPhaseId, readonly React19MigrationPhase[]>
+> = {
+  'react-version': ['preflight', 'react-bridge'],
+  'react-dom-version': ['dependency-modernization'],
+  dependencies: ['dependency-modernization'],
+  'build-tool': ['tooling', 'api-compatibility'],
+  'typescript-readiness': ['typescript-readiness'],
+  routing: ['routing-readiness'],
+  testing: ['testing-readiness'],
+  validation: ['validation-readiness'],
+  'git-workspace': ['preflight'],
+};
 
 /* -------------------------------------------------------------------------- */
 /* Validation commands                                                        */

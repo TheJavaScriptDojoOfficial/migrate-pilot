@@ -16,6 +16,7 @@ import type {
   React19CompatibilityReport,
   React19MigrationContext,
   React19ReadinessReportViewModel,
+  React19RiskEngineResult,
   React19SupportStatus,
 } from '@features/react19-migration';
 
@@ -261,6 +262,14 @@ export interface ScanReport {
    * `buildReact19ReadinessReportViewModel`.
    */
   readonly react19ReadinessReport?: React19ReadinessReportViewModel;
+  /**
+   * React 19 risk/recommendation engine output (R3). Planner-consumable
+   * normalized mapping from issue code → phase/risk/recommendation/
+   * execution capability/validation requirements.
+   *
+   * Optional for backward compatibility with persisted pre-R3 reports.
+   */
+  readonly react19RiskEngine?: React19RiskEngineResult;
 }
 
 /* -------------------------------------------------------------------------- */
