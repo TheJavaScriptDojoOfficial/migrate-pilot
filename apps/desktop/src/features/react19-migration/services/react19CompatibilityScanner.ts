@@ -1,7 +1,7 @@
 /**
  * React 19 compatibility scanner — deterministic compute service.
  *
- * Rework Milestone R2 — React 19 Readiness Report V2, Step 3.
+ * Rework Milestone R2 — React 19 Readiness Report V2, Step 3–4.
  *
  * Step 3 widens the scanner from a `node-sass`-centric pass into a
  * generic React 19 readiness analysis. This service is the single
@@ -39,6 +39,7 @@ import type {
   React19CompatibilitySummary,
 } from '../types/react19Compatibility.types';
 import { REACT_19_COMPATIBILITY_CATEGORIES_ORDERED } from '../types/react19Compatibility.types';
+import { resolveReact19CanonicalIssueCode } from '../constants/react19IssueCodes';
 
 /* -------------------------------------------------------------------------- */
 /* Public input                                                               */
@@ -84,6 +85,10 @@ export interface React19SourceSignals {
   readonly enzymeUsageIndicators?: number;
   readonly deprecatedLifecycleSampleFiles?: readonly string[];
   readonly deprecatedLifecycleTotalCount?: number;
+  readonly defaultPropsUsages?: number;
+  readonly defaultPropsSampleFiles?: readonly string[];
+  readonly propTypesUsages?: number;
+  readonly propTypesSampleFiles?: readonly string[];
   readonly scssFileCount?: number;
   readonly sassFileCount?: number;
   readonly jsFileCount?: number;
@@ -114,6 +119,8 @@ export interface React19CompatibilityScanInput {
   readonly packageManager?: React19CompatibilityPackageManager;
   /** Lockfiles actually present in the project root. */
   readonly lockFiles?: readonly string[];
+  /** Git cleanliness from the deterministic scanner (`clean` / `dirty`). */
+  readonly gitClean?: 'clean' | 'dirty' | 'unknown';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -140,22 +147,25 @@ export function computeReact19CompatibilityReport(
   collectDeprecatedReactApiIssues(ctx, issues);
   collectDeprecatedLifecycleIssues(ctx, issues);
   collectComponentPatternIssues(ctx, issues);
+  collectDefaultPropsAndPropTypesIssues(ctx, issues);
   collectRoutingIssues(ctx, issues);
   collectTestingIssues(ctx, issues);
   collectDeprecatedDependencyIssues(ctx, issues);
   collectPeerDependencyIssues(ctx, issues);
   collectSassScssIssues(ctx, issues);
   collectPackageManagerIssues(ctx, issues);
+  collectGitStateIssues(ctx, issues);
   collectValidationIssues(ctx, issues);
 
-  const summary = buildSummary(issues);
-  const categories = buildCategoryReports(issues);
+  const issuesWithCanonical = attachCanonicalCodes(issues);
+  const summary = buildSummary(issuesWithCanonical);
+  const categories = buildCategoryReports(issuesWithCanonical);
   const signals = buildSignals(ctx);
 
   return {
     summary,
     categories,
-    issues,
+    issues: issuesWithCanonical,
     signals,
   };
 }
@@ -871,6 +881,84 @@ function collectComponentPatternIssues(
       count: classCount,
     });
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rule: defaultProps / propTypes on function components                      */
+/* -------------------------------------------------------------------------- */
+
+function collectDefaultPropsAndPropTypesIssues(
+  ctx: ScanContext,
+  out: React19CompatibilityIssue[],
+): void {
+  const defaultPropsCount = ctx.source.defaultPropsUsages ?? 0;
+  if (defaultPropsCount > 0) {
+    const samples = ctx.source.defaultPropsSampleFiles ?? [];
+    out.push({
+      code: 'default-props-on-function-components',
+      category: 'deprecated-react-api',
+      severity: 'medium',
+      title: 'Default props on function components',
+      message: `Possible \`.defaultProps\` assignments were detected in ${defaultPropsCount} file${defaultPropsCount === 1 ? '' : 's'}. React 19 removes \`defaultProps\` support on function components.`,
+      recommendation:
+        'Prefer ES default parameters or destructuring defaults instead of `.defaultProps` on function components.',
+      count: defaultPropsCount,
+      ...(samples.length > 0 ? { filePaths: samples } : {}),
+    });
+  }
+
+  const propTypesCount = ctx.source.propTypesUsages ?? 0;
+  if (propTypesCount > 0) {
+    const samples = ctx.source.propTypesSampleFiles ?? [];
+    out.push({
+      code: 'prop-types-on-function-components',
+      category: 'deprecated-react-api',
+      severity: 'medium',
+      title: 'PropTypes on function components',
+      message: `PropTypes usage was detected in ${propTypesCount} file${propTypesCount === 1 ? '' : 's'} and may need review for React 19 compatibility.`,
+      recommendation:
+        'Migrate to TypeScript types or a runtime validation library compatible with React 19.',
+      count: propTypesCount,
+      ...(samples.length > 0 ? { filePaths: samples } : {}),
+    });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Rule: git state                                                            */
+/* -------------------------------------------------------------------------- */
+
+function collectGitStateIssues(
+  ctx: ScanContext,
+  out: React19CompatibilityIssue[],
+): void {
+  if (ctx.input.gitClean === 'dirty') {
+    out.push({
+      code: 'dirty-git-state',
+      category: 'package-manager',
+      severity: 'high',
+      title: 'Uncommitted Git changes detected',
+      message:
+        'The working tree has uncommitted changes. Migration workspaces work best from a clean baseline.',
+      recommendation:
+        'Commit, stash, or discard existing changes before creating a migration workspace.',
+    });
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Canonical code attachment                                                  */
+/* -------------------------------------------------------------------------- */
+
+function attachCanonicalCodes(
+  issues: readonly React19CompatibilityIssue[],
+): React19CompatibilityIssue[] {
+  return issues.map((issue) => {
+    const canonicalCode = resolveReact19CanonicalIssueCode(issue.code);
+    if (canonicalCode === undefined) return issue;
+    if (issue.canonicalCode === canonicalCode) return issue;
+    return { ...issue, canonicalCode };
+  });
 }
 
 /* -------------------------------------------------------------------------- */

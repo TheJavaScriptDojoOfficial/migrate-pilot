@@ -447,6 +447,14 @@ pub struct SourceScanRaw {
     /// Number of files importing from `enzyme` (Enzyme is an unsupported
     /// React 18+/19 testing surface).
     pub enzyme_usage_indicators: u32,
+    /// Number of files containing a `.defaultProps` assignment heuristic.
+    pub default_props_usages: u32,
+    /// Up to five sample relative paths with `.defaultProps` assignments.
+    pub default_props_sample_files: Vec<String>,
+    /// Number of files containing a `.propTypes` assignment heuristic.
+    pub prop_types_usages: u32,
+    /// Up to five sample relative paths with `.propTypes` assignments.
+    pub prop_types_sample_files: Vec<String>,
     /// Top-level entries actually walked.
     pub scanned_directories: Vec<String>,
     /// Top-level entries skipped (node_modules, dist, …).
@@ -737,6 +745,10 @@ struct ScanWalker {
     legacy_context_indicators: u32,
     router_usage_indicators: u32,
     enzyme_usage_indicators: u32,
+    default_props_usages: u32,
+    default_props_sample_files: Vec<String>,
+    prop_types_usages: u32,
+    prop_types_sample_files: Vec<String>,
     /// Per-method counts + first example file for each deprecated lifecycle method.
     lifecycle_counts: [(u32, Option<String>); DEPRECATED_LIFECYCLE_METHODS.len()],
     scanned_directories: Vec<String>,
@@ -769,6 +781,10 @@ impl ScanWalker {
             legacy_context_indicators: 0,
             router_usage_indicators: 0,
             enzyme_usage_indicators: 0,
+            default_props_usages: 0,
+            default_props_sample_files: Vec::new(),
+            prop_types_usages: 0,
+            prop_types_sample_files: Vec::new(),
             lifecycle_counts: std::array::from_fn(|_| (0, None)),
             scanned_directories: Vec::new(),
             skipped_directories: Vec::new(),
@@ -949,6 +965,14 @@ impl ScanWalker {
         if ENZYME_USAGE_PATTERNS.iter().any(|p| text.contains(p)) {
             self.enzyme_usage_indicators += 1;
         }
+        if contains_member_assignment(&text, ".defaultProps") {
+            self.default_props_usages += 1;
+            push_sample_path(&mut self.default_props_sample_files, &rel);
+        }
+        if contains_member_assignment(&text, ".propTypes") {
+            self.prop_types_usages += 1;
+            push_sample_path(&mut self.prop_types_sample_files, &rel);
+        }
 
         for (i, method) in DEPRECATED_LIFECYCLE_METHODS.iter().enumerate() {
             if text.contains(method) {
@@ -996,6 +1020,10 @@ impl ScanWalker {
             legacy_context_indicators: self.legacy_context_indicators,
             router_usage_indicators: self.router_usage_indicators,
             enzyme_usage_indicators: self.enzyme_usage_indicators,
+            default_props_usages: self.default_props_usages,
+            default_props_sample_files: self.default_props_sample_files,
+            prop_types_usages: self.prop_types_usages,
+            prop_types_sample_files: self.prop_types_sample_files,
             scanned_directories: self.scanned_directories,
             skipped_directories: self.skipped_directories,
         }
@@ -1005,6 +1033,26 @@ impl ScanWalker {
 fn should_skip_dir(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     SKIP_DIRS.iter().any(|d| *d == lower)
+}
+
+const MAX_SOURCE_SAMPLE_PATHS: usize = 5;
+
+/// Append a relative file path to a capped sample list (deduped).
+fn push_sample_path(samples: &mut Vec<String>, path: &str) {
+    if samples.len() >= MAX_SOURCE_SAMPLE_PATHS {
+        return;
+    }
+    if samples.iter().any(|existing| existing == path) {
+        return;
+    }
+    samples.push(path.to_string());
+}
+
+/// Heuristic detector for static member assignments such as
+/// `Component.defaultProps = …` or `Component.propTypes = …`.
+/// Looks for the member name followed (after optional whitespace) by `=`.
+fn contains_member_assignment(text: &str, member: &str) -> bool {
+    text.split(member).skip(1).any(|rest| rest.trim_start().starts_with('='))
 }
 
 /// Look for any of `candidates` as direct children of `root`, returning

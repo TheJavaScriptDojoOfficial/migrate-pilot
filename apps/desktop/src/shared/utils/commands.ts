@@ -116,6 +116,14 @@ export interface ProjectScanSourceRaw {
   readonly routerUsageIndicators: number;
   /** Files importing from `enzyme`. */
   readonly enzymeUsageIndicators?: number;
+  /** Files containing `.defaultProps` assignments. */
+  readonly defaultPropsUsages?: number;
+  /** Sample paths (up to 5) with `.defaultProps` assignments. */
+  readonly defaultPropsSampleFiles?: readonly string[];
+  /** Files containing `.propTypes` assignments. */
+  readonly propTypesUsages?: number;
+  /** Sample paths (up to 5) with `.propTypes` assignments. */
+  readonly propTypesSampleFiles?: readonly string[];
   readonly scannedDirectories: readonly string[];
   readonly skippedDirectories: readonly string[];
 }

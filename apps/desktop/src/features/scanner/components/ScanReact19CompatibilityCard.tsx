@@ -17,6 +17,7 @@ import type {
   React19CompatibilityReport,
   React19CompatibilitySeverity,
 } from '@features/react19-migration';
+import { getReact19IssueDisplayLabel } from '@features/react19-migration';
 
 /**
  * ScanReact19CompatibilityCard — R2 Step 3 surface for the broader React 19
@@ -270,9 +271,9 @@ function CategoryRow({
       {topIssue !== undefined ? (
         <p
           className="truncate text-2xs leading-snug text-ink-muted"
-          title={topIssue.title}
+          title={getReact19IssueDisplayLabel(topIssue)}
         >
-          {topIssue.title}
+          {getReact19IssueDisplayLabel(topIssue)}
         </p>
       ) : null}
     </li>
@@ -362,6 +363,7 @@ function IssueRow({
   readonly issue: React19CompatibilityIssue;
 }): JSX.Element {
   const style = SEVERITY_STYLE[issue.severity];
+  const displayLabel = getReact19IssueDisplayLabel(issue);
   return (
     <li className="flex items-start gap-3 rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-3 py-2.5">
       <span
@@ -375,7 +377,7 @@ function IssueRow({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-xs font-semibold text-ink">{issue.title}</p>
+          <p className="text-xs font-semibold text-ink">{displayLabel}</p>
           <Badge tone={style.tone} variant="soft" uppercase>
             {issue.severity}
           </Badge>

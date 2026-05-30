@@ -1,7 +1,7 @@
 /**
  * React 19 compatibility report — domain types.
  *
- * Rework Milestone R2 — React 19 Readiness Report V2, Step 3.
+ * Rework Milestone R2 — React 19 Readiness Report V2, Step 3–4.
  *
  * Step 3 widens the scanner from a `node-sass`-centric pass into a
  * generic React 19 readiness analysis. The {@link React19CompatibilityReport}
@@ -24,6 +24,8 @@
  *   - No AI-based planning
  *   - No diff or workspace integration
  */
+
+import type { React19CanonicalIssueCode } from '../constants/react19IssueCodes';
 
 /* -------------------------------------------------------------------------- */
 /* Categories                                                                 */
@@ -164,6 +166,8 @@ export type React19CompatibilityIssueCode =
   | 'unmount-component-at-node-detected'
   | 'unstable-render-subtree-detected'
   | 'create-factory-detected'
+  | 'default-props-on-function-components'
+  | 'prop-types-on-function-components'
   // deprecated-lifecycle
   | 'deprecated-lifecycle-detected'
   // component-patterns
@@ -192,6 +196,7 @@ export type React19CompatibilityIssueCode =
   | 'no-lockfile-found'
   | 'multiple-lockfiles-found'
   | 'package-manager-lockfile-mismatch'
+  | 'dirty-git-state'
   // validation
   | 'missing-build-script'
   | 'missing-test-script'
@@ -202,6 +207,10 @@ export type React19CompatibilityIssueCode =
  * A single deterministic compatibility finding produced by the scanner.
  *
  *   `code`              Stable identifier; never user-facing copy.
+ *   `canonicalCode`     Optional product-level code from
+ *                         {@link React19CanonicalIssueCode} for Planner V2 /
+ *                         Risk Engine R3. Detailed detection codes map here
+ *                         via the centralized registry.
  *   `category`          One of {@link React19CompatibilityCategory}.
  *   `severity`          One of {@link React19CompatibilitySeverity}.
  *   `title`             Short, user-facing headline.
@@ -220,6 +229,7 @@ export type React19CompatibilityIssueCode =
  */
 export interface React19CompatibilityIssue {
   readonly code: React19CompatibilityIssueCode;
+  readonly canonicalCode?: React19CanonicalIssueCode;
   readonly category: React19CompatibilityCategory;
   readonly severity: React19CompatibilitySeverity;
   readonly title: string;

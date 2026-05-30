@@ -174,6 +174,7 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
     source: toCompatibilitySource(raw, sourceAnalysis),
     packageManager: dependencies.packageManager,
     lockFiles: dependencies.lockFiles,
+    gitClean: projectInfo.gitClean,
   });
 
   return {
@@ -536,5 +537,9 @@ function toCompatibilitySource(
     jsxFileCount: source.jsxFiles,
     tsFileCount: source.tsFiles,
     tsxFileCount: source.tsxFiles,
+    defaultPropsUsages: raw.source.defaultPropsUsages ?? 0,
+    defaultPropsSampleFiles: raw.source.defaultPropsSampleFiles ?? [],
+    propTypesUsages: raw.source.propTypesUsages ?? 0,
+    propTypesSampleFiles: raw.source.propTypesSampleFiles ?? [],
   };
 }

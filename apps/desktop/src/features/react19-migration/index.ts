@@ -45,6 +45,18 @@ export type {
   React19CompatibilitySummary,
 } from './types/react19Compatibility.types';
 export { REACT_19_COMPATIBILITY_CATEGORIES_ORDERED } from './types/react19Compatibility.types';
+export {
+  REACT19_DETAILED_TO_CANONICAL,
+  REACT19_ISSUE_CODE_METADATA,
+  REACT19_ISSUE_CODES,
+  getReact19IssueDisplayLabel,
+  isReact19CanonicalIssueCode,
+  resolveReact19CanonicalIssueCode,
+} from './constants/react19IssueCodes';
+export type {
+  React19CanonicalIssueCode,
+  React19IssueCodeMetadata,
+} from './constants/react19IssueCodes';
 export { computeReact19CompatibilityReport } from './services/react19CompatibilityScanner';
 export type {
   React19CompatibilityPackageManager,
