@@ -9,6 +9,7 @@
  */
 export type {
   React19MigrationContext,
+  React19RiskEnginePhase,
   React19PackageManager,
   React19SupportLevel,
   React19SupportReasonCode,
@@ -19,9 +20,14 @@ export type {
   ReactMigrationTrack,
 } from './types/react19Migration.types';
 export {
+  REACT_19_CANONICAL_PHASE_ORDER,
   REACT_MIGRATION_PHASES_BY_TRACK,
   REACT_MIGRATION_PHASES_ORDERED,
   REACT_MIGRATION_TARGET_MAJOR,
+  getReactMigrationPhaseDescription,
+  getReactMigrationPhaseLabel,
+  getReactMigrationPhaseOrder,
+  mapRiskEnginePhaseToReactMigrationPhase,
 } from './types/react19Migration.types';
 export {
   computeReact19MigrationContext,

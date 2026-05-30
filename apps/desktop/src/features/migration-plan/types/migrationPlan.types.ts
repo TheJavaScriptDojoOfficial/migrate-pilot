@@ -2,7 +2,6 @@ import type { ScanIssueCode, ScanReport } from '@features/scanner';
 import type {
   React19ExecutionCapability,
   ReactMigrationPhase,
-  React19MigrationPhase,
   React19MigrationRiskLevel,
   ReactMigrationTrack,
 } from '@features/react19-migration';
@@ -116,7 +115,7 @@ export interface React19PlanStep {
   readonly order: number;
   readonly title: string;
   readonly description: string;
-  readonly phase: React19MigrationPhase;
+  readonly phase: ReactMigrationPhase;
   readonly track: ReactMigrationTrack;
   readonly riskLevel: React19MigrationRiskLevel;
   readonly executionType: React19PlanStepExecutionType;
@@ -175,10 +174,10 @@ export interface React19MigrationPlanV2 {
   readonly prerequisites: readonly string[];
   readonly steps: readonly React19PlanStep[];
   readonly skippedPhases: readonly {
-    phase: React19MigrationPhase;
+    phase: ReactMigrationPhase;
     reason: string;
   }[];
-  readonly phaseSummary: Readonly<Record<React19MigrationPhase, React19PlanPhaseSummary>>;
+  readonly phaseSummary: Readonly<Record<ReactMigrationPhase, React19PlanPhaseSummary>>;
   readonly validationStrategy: React19ValidationStrategy;
   readonly highestRisk: React19MigrationRiskLevel;
   readonly summary: {

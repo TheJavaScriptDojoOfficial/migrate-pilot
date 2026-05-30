@@ -1,11 +1,14 @@
 import type { ScanReport } from '@features/scanner';
 import {
+  REACT_19_CANONICAL_PHASE_ORDER,
   buildReact19RiskEngine,
+  getReactMigrationPhaseOrder,
+  mapRiskEnginePhaseToReactMigrationPhase,
   resolveReact19PlanGenerationGate,
-  type React19MigrationPhase,
   type React19MigrationRiskLevel,
   type React19RiskRecommendation,
   type React19RiskEngineResult,
+  type ReactMigrationPhase,
   type ReactMigrationTrack,
 } from '@features/react19-migration';
 
@@ -17,18 +20,6 @@ import type {
   React19PlanStepExecutionType,
   React19ValidationStrategy,
 } from '../types/migrationPlan.types';
-
-const PHASE_ORDER: readonly React19MigrationPhase[] = [
-  'preflight',
-  'validation-readiness',
-  'react-bridge',
-  'dependency-modernization',
-  'tooling',
-  'typescript-readiness',
-  'api-compatibility',
-  'routing-readiness',
-  'testing-readiness',
-];
 
 const VALIDATION_SCRIPT_PRIORITY = ['build', 'test', 'lint', 'typecheck'] as const;
 
@@ -179,7 +170,7 @@ export function buildReact19PlanStepsFromRiskEngine(scanReport: ScanReport): Rea
       title: 'Run baseline validation in migration workspace',
       description:
         'Establish the current build/test/lint baseline inside the migration workspace before applying React 19 migration changes.',
-      phase: 'validation-readiness',
+      phase: 'validation',
       track,
       riskLevel: 'medium',
       executionType: 'validation-only',
@@ -213,7 +204,7 @@ export function buildReact19PlanStepsFromRiskEngine(scanReport: ScanReport): Rea
       title: 'Run final React 19 migration validation',
       description:
         'Run the full validation suite after all selected migration steps to confirm project stability on the React 19 path.',
-      phase: 'validation-readiness',
+      phase: 'validation',
       track,
       riskLevel: 'medium',
       executionType: 'validation-only',
@@ -269,7 +260,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
   );
   if (validationReadiness.length > 0) {
     output.push(
-      createGroupedStep(track, 'validation-readiness', 'react19.validation.readiness', {
+      createGroupedStep(track, 'validation', 'react19.validation.readiness', {
         title: 'Strengthen migration validation readiness',
         description:
           'Resolve missing or weak validation gates so each migration step can be verified consistently.',
@@ -282,7 +273,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
   const bridgeItems = byPhase['react-bridge'];
   if (sourceMajor === 16 || sourceMajor === 17) {
     output.push(
-      createGroupedStep(track, 'react-bridge', 'react19.bridge.react18', {
+      createGroupedStep(track, 'react-18-bridge', 'react19.bridge.react18', {
         title: `Bridge React ${sourceMajor} project through React 18 compatibility`,
         description:
           'Direct upgrades from React 16/17 to React 19 are high-risk. Align root APIs and compatibility assumptions through a React 18 bridge phase first.',
@@ -307,7 +298,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
     output.push(
       createGroupedStep(
         track,
-        'dependency-modernization',
+        'react-19-upgrade',
         'react19.dependencies.foundation',
         {
           title: 'Modernize package foundation dependencies',
@@ -322,7 +313,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
   }
 
   output.push(
-    createGroupedStep(track, 'dependency-modernization', 'react19.dependencies.react-upgrade', {
+    createGroupedStep(track, 'react-19-upgrade', 'react19.dependencies.react-upgrade', {
       title: 'Upgrade React and React DOM toward React 19',
       description:
         'Prepare React and React DOM package upgrades for React 19, including peer dependency compatibility checks and install/build verification.',
@@ -334,72 +325,84 @@ export function groupRiskRecommendationsIntoPlanSteps(
     }),
   );
 
-  const phaseTitles: Readonly<
-    Record<
-      Exclude<React19MigrationPhase, 'preflight' | 'react-bridge' | 'dependency-modernization'>,
-      { title: string; description: string; reason: string }
-    >
-  > = {
-    tooling: {
-      title: 'Align React 19 tooling compatibility',
-      description:
-        'Update build/tooling configuration risks (build tool age, JSX transform, bundler compatibility).',
-      reason: 'Tooling compatibility is required for stable React 19 builds and CI signals.',
-    },
-    'typescript-readiness': {
-      title: 'Prepare TypeScript readiness for React 19',
-      description:
-        'Address TypeScript readiness and compiler setup risks that can block safe API upgrades.',
-      reason: 'Type safety helps surface migration regressions early in the upgrade sequence.',
-    },
-    'api-compatibility': {
-      title: 'Resolve React API compatibility risks',
-      description:
-        'Address legacy APIs, lifecycle patterns, and component patterns incompatible with modern React behavior.',
-      reason: 'API compatibility changes are high-impact and must be explicitly reviewed.',
-    },
-    'routing-readiness': {
-      title: 'Prepare routing compatibility for React 19',
-      description:
-        'Resolve routing version and readiness concerns before final migration validation.',
-      reason: 'Routing upgrades can affect critical user flows and require targeted verification.',
-    },
-    'testing-readiness': {
-      title: 'Upgrade testing readiness for React 19',
-      description:
-        'Address testing framework compatibility risks so migration regressions are detectable during rollout.',
-      reason: 'Migration confidence depends on reliable test feedback throughout step execution.',
-    },
-    'validation-readiness': {
-      title: '',
-      description: '',
-      reason: '',
-    },
-  };
+  const toolingItems = byPhase.tooling.filter((item) => !isValidationSignal(item));
+  const jsxTransformItems = toolingItems.filter((item) =>
+    mapRiskEnginePhaseToReactMigrationPhase(item.phase, item.sourceIssueCode) === 'jsx-transform',
+  );
+  const pureToolingItems = toolingItems.filter((item) => !jsxTransformItems.includes(item));
 
-  for (const phase of PHASE_ORDER) {
-    if (
-      phase === 'preflight' ||
-      phase === 'validation-readiness' ||
-      phase === 'react-bridge' ||
-      phase === 'dependency-modernization'
-    ) {
-      continue;
-    }
-    const items = byPhase[phase].filter((item) => !isValidationSignal(item));
-    if (items.length === 0) continue;
-    const preset = phaseTitles[phase];
+  if (pureToolingItems.length > 0) {
     output.push(
-      createGroupedStep(track, phase, `react19.${phase}`, {
-        title: preset.title,
-        description: preset.description,
-        reason: preset.reason,
-        items,
+      createGroupedStep(track, 'tooling', 'react19.tooling', {
+        title: 'Align React 19 tooling compatibility',
+        description:
+          'Update build/tooling configuration risks (build tool age and bundler compatibility).',
+        reason: 'Tooling compatibility is required for stable React 19 builds and CI signals.',
+        items: pureToolingItems,
+      }),
+    );
+  }
+  if (jsxTransformItems.length > 0) {
+    output.push(
+      createGroupedStep(track, 'jsx-transform', 'react19.jsx-transform', {
+        title: 'Upgrade JSX transform configuration',
+        description:
+          'Adopt and verify modern JSX transform configuration needed for React 19 compatibility.',
+        reason: 'JSX transform mismatches create compile/runtime instability during migration.',
+        items: jsxTransformItems,
       }),
     );
   }
 
-  return output.map((step) => ({ ...step, order: 0 }));
+  const apiCompatibilityItems = byPhase['api-compatibility'].filter((item) => !isValidationSignal(item));
+  if (apiCompatibilityItems.length > 0) {
+    output.push(
+      createGroupedStep(track, 'api-compatibility', 'react19.api-compatibility', {
+        title: 'Resolve React API compatibility risks',
+        description:
+          'Address legacy APIs, lifecycle patterns, and component patterns incompatible with modern React behavior.',
+        reason: 'API compatibility changes are high-impact and must be explicitly reviewed.',
+        items: apiCompatibilityItems,
+      }),
+    );
+  }
+
+  const sourceModernizationItems = [
+    ...byPhase['typescript-readiness'],
+    ...byPhase['routing-readiness'],
+  ].filter((item) => !isValidationSignal(item));
+  if (sourceModernizationItems.length > 0) {
+    output.push(
+      createGroupedStep(track, 'source-modernization', 'react19.source-modernization', {
+        title: 'Modernize source and readiness foundations',
+        description:
+          'Address TypeScript and routing readiness risks that influence source migration stability.',
+        reason: 'Readiness modernization reduces late-stage integration regressions.',
+        items: sourceModernizationItems,
+      }),
+    );
+  }
+
+  const testingReadinessItems = byPhase['testing-readiness'].filter((item) => !isValidationSignal(item));
+  if (testingReadinessItems.length > 0) {
+    output.push(
+      createGroupedStep(track, 'validation', 'react19.validation.testing', {
+        title: 'Upgrade testing readiness for React 19',
+        description:
+          'Address testing framework compatibility risks so migration regressions are detectable during rollout.',
+        reason: 'Migration confidence depends on reliable test feedback throughout step execution.',
+        items: testingReadinessItems,
+      }),
+    );
+  }
+
+  return output
+    .map((step) => ({ ...step, order: 0 }))
+    .sort((a, b) => {
+      const byPhase = getReactMigrationPhaseOrder(a.phase) - getReactMigrationPhaseOrder(b.phase);
+      if (byPhase !== 0) return byPhase;
+      return a.id.localeCompare(b.id);
+    });
 }
 
 export function buildReact19ValidationStrategy(scanReport: ScanReport): React19ValidationStrategy {
@@ -421,18 +424,8 @@ export function buildReact19ValidationStrategy(scanReport: ScanReport): React19V
 export function summarizeReact19PlanPhases(
   steps: readonly React19PlanStep[],
 ): React19MigrationPlanV2['phaseSummary'] {
-  const out: Record<React19MigrationPhase, React19PlanPhaseSummary> = {
-    preflight: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    tooling: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'react-bridge': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'api-compatibility': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'dependency-modernization': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'typescript-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'routing-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'testing-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'validation-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-  };
-  for (const phase of Object.keys(out) as React19MigrationPhase[]) {
+  const out = emptyPhaseSummary();
+  for (const phase of REACT_19_CANONICAL_PHASE_ORDER) {
     const phaseSteps = steps.filter((step) => step.phase === phase);
     const executionTypes = Array.from(new Set(phaseSteps.map((step) => step.executionType)));
     out[phase] = {
@@ -453,11 +446,11 @@ function resolveRiskEngine(scanReport: ScanReport): React19RiskEngineResult {
 
 function resolveSkippedPhases(
   sourceMajor: 16 | 17 | 18,
-): readonly { phase: React19MigrationPhase; reason: string }[] {
+): readonly { phase: ReactMigrationPhase; reason: string }[] {
   if (sourceMajor !== 18) return [];
   return [
     {
-      phase: 'react-bridge',
+      phase: 'react-18-bridge',
       reason:
         'Source project is already on React 18, so the React 18 bridge phase is not required.',
     },
@@ -466,7 +459,7 @@ function resolveSkippedPhases(
 
 function createGroupedStep(
   track: ReactMigrationTrack,
-  phase: React19MigrationPhase,
+  phase: ReactMigrationPhase,
   id: string,
   config: {
     readonly title: string;
@@ -538,7 +531,7 @@ function createGroupedStep(
     expectedChangeScope: expectedChangeScopeForPhase(phase),
     expectedAreas: expectedChangeScopeForPhase(phase),
     validationCommands,
-    required: riskLevel === 'blocker' || riskLevel === 'high' || phase === 'dependency-modernization',
+    required: riskLevel === 'blocker' || riskLevel === 'high' || phase === 'react-19-upgrade',
     approvalRequired: requiresHumanReview,
     requiresHumanReview,
     ...(config.forceBlocksUpgrade === true || items.some((item) => item.blocksUpgrade === true)
@@ -620,49 +613,47 @@ function resolveHighestRisk(levels: readonly React19MigrationRiskLevel[]): React
   return 'info';
 }
 
-function expectedChangeScopeForPhase(phase: React19MigrationPhase): readonly string[] {
+function expectedChangeScopeForPhase(phase: ReactMigrationPhase): readonly string[] {
   switch (phase) {
     case 'preflight':
       return ['package manager / lockfile hygiene', 'migration preconditions'];
-    case 'validation-readiness':
-      return ['package.json scripts', 'CI validation gates'];
-    case 'react-bridge':
-      return ['React root APIs', 'bridge compatibility updates'];
-    case 'dependency-modernization':
-      return ['package.json dependencies', 'lockfile updates'];
     case 'tooling':
-      return ['build tool and bundler config', 'JSX transform configuration'];
-    case 'typescript-readiness':
-      return ['tsconfig and TS tooling', 'type safety setup'];
+      return ['build tool and bundler config', 'toolchain compatibility'];
+    case 'react-18-bridge':
+      return ['React root APIs', 'bridge compatibility updates'];
     case 'api-compatibility':
       return ['React API usage in source files', 'legacy lifecycle replacement'];
-    case 'routing-readiness':
-      return ['routing configuration and route modules'];
-    case 'testing-readiness':
-      return ['test setup and migration assertions'];
+    case 'jsx-transform':
+      return ['JSX compiler settings', 'Babel/TypeScript JSX configuration'];
+    case 'react-19-upgrade':
+      return ['package.json dependencies', 'lockfile updates'];
+    case 'source-modernization':
+      return ['tsconfig and TS tooling', 'type safety setup'];
+    case 'validation':
+      return ['package.json scripts', 'CI validation gates', 'test setup and migration assertions'];
+    case 'final-review':
+      return ['migration summary', 'release readiness checklist'];
   }
 }
 
-function categoryForPhase(phase: React19MigrationPhase): React19PlanStep['category'] {
+function categoryForPhase(phase: ReactMigrationPhase): React19PlanStep['category'] {
   switch (phase) {
     case 'preflight':
       return 'preflight';
-    case 'validation-readiness':
-      return 'validation';
-    case 'react-bridge':
-      return 'bridge';
-    case 'dependency-modernization':
-      return 'dependency';
     case 'tooling':
+    case 'jsx-transform':
       return 'tooling';
-    case 'typescript-readiness':
-      return 'typescript';
+    case 'react-18-bridge':
+      return 'bridge';
     case 'api-compatibility':
       return 'api';
-    case 'routing-readiness':
-      return 'routing';
-    case 'testing-readiness':
-      return 'testing';
+    case 'react-19-upgrade':
+      return 'dependency';
+    case 'source-modernization':
+      return 'typescript';
+    case 'validation':
+    case 'final-review':
+      return 'validation';
   }
 }
 
@@ -692,17 +683,17 @@ function buildPrerequisites(
   return prerequisites;
 }
 
-function emptyPhaseSummary(): Readonly<Record<React19MigrationPhase, React19PlanPhaseSummary>> {
+function emptyPhaseSummary(): Record<ReactMigrationPhase, React19PlanPhaseSummary> {
   return {
     preflight: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
     tooling: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'react-bridge': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    'react-18-bridge': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
     'api-compatibility': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'dependency-modernization': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'typescript-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'routing-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'testing-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
-    'validation-readiness': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    'jsx-transform': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    'react-19-upgrade': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    'source-modernization': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    validation: { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
+    'final-review': { totalSteps: 0, highestRisk: 'info', executionTypes: [] },
   };
 }
 

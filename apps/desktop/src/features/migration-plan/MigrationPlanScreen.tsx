@@ -18,7 +18,11 @@ import { StatusIndicator } from '@shared/ui/StatusIndicator';
 import { StepEyebrow } from '@shared/ui/StepEyebrow';
 import { ROUTES } from '@shared/constants/routes';
 
-import { REACT19_PHASE_DISPLAY_NAMES, resolveReact19PlanGenerationGate } from '@features/react19-migration';
+import {
+  REACT_19_CANONICAL_PHASE_ORDER,
+  getReactMigrationPhaseLabel,
+  resolveReact19PlanGenerationGate,
+} from '@features/react19-migration';
 import {
   selectScanReport,
   selectScanStatus,
@@ -364,7 +368,7 @@ function PlanSummaryCard({
 }: {
   readonly plan: NonNullable<ReturnType<typeof useMigrationPlanStore.getState>['plan']>;
 }): JSX.Element {
-  const bridgeSkip = plan.skippedPhases.find((phase) => phase.phase === 'react-bridge');
+  const bridgeSkip = plan.skippedPhases.find((phase) => phase.phase === 'react-18-bridge');
   return (
     <Card>
       <CardHeader>
@@ -413,7 +417,7 @@ function PhaseBreakdownCard({
         </div>
       </CardHeader>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {(Object.keys(plan.phaseSummary) as Array<keyof typeof plan.phaseSummary>).map((phase) => {
+        {REACT_19_CANONICAL_PHASE_ORDER.map((phase) => {
           const phaseSummary = plan.phaseSummary[phase];
           const status =
             phaseSummary.totalSteps === 0 ? 'skipped' : phaseSummary.highestRisk === 'blocker' ? 'blocked' : 'ready';
@@ -423,7 +427,7 @@ function PhaseBreakdownCard({
               className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-3 py-2"
             >
               <p className="text-xs font-semibold text-ink">
-                {REACT19_PHASE_DISPLAY_NAMES[phase]}
+                {getReactMigrationPhaseLabel(phase)}
               </p>
               <p className="mt-1 text-2xs text-ink-subtle">
                 Steps: {phaseSummary.totalSteps} · Highest risk: {phaseSummary.highestRisk}
@@ -480,7 +484,7 @@ function PlanStepsCard({
                   {step.riskLevel}
                 </Badge>
                 <Badge tone="neutral" variant="outline">
-                  {REACT19_PHASE_DISPLAY_NAMES[step.phase]}
+                  {getReactMigrationPhaseLabel(step.phase)}
                 </Badge>
                 <Badge tone="neutral" variant="outline">
                   {step.track}
@@ -541,7 +545,9 @@ function SkippedPhasesCard({
             key={`${phase.phase}:${phase.reason}`}
             className="rounded-md border border-canvas-border bg-canvas-subtle-2/40 px-3 py-2 text-xs text-ink-muted"
           >
-            <span className="font-semibold text-ink">{REACT19_PHASE_DISPLAY_NAMES[phase.phase]}</span>{' '}
+            <span className="font-semibold text-ink">
+              {getReactMigrationPhaseLabel(phase.phase)}
+            </span>{' '}
             skipped — {phase.reason}
           </li>
         ))}

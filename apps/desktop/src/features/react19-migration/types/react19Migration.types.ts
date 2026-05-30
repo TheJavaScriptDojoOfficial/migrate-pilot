@@ -94,6 +94,21 @@ export type ReactMigrationPhase =
   | 'validation'
   | 'final-review';
 
+/**
+ * Legacy risk-engine phase ids (R3). These remain supported so Planner V2 can
+ * adapt older risk phase buckets into canonical plan phases.
+ */
+export type React19RiskEnginePhase =
+  | 'preflight'
+  | 'tooling'
+  | 'react-bridge'
+  | 'api-compatibility'
+  | 'dependency-modernization'
+  | 'typescript-readiness'
+  | 'routing-readiness'
+  | 'testing-readiness'
+  | 'validation-readiness';
+
 /* -------------------------------------------------------------------------- */
 /* Context                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -152,6 +167,92 @@ export const REACT_MIGRATION_PHASES_ORDERED: readonly ReactMigrationPhase[] = [
   'validation',
   'final-review',
 ];
+
+/**
+ * Canonical React 19 phase order consumed by Planner/Plan UI.
+ */
+export const REACT_19_CANONICAL_PHASE_ORDER: readonly ReactMigrationPhase[] =
+  REACT_MIGRATION_PHASES_ORDERED;
+
+const REACT_19_PHASE_LABELS: Readonly<Record<ReactMigrationPhase, string>> = {
+  preflight: 'Preflight',
+  tooling: 'Tooling',
+  'react-18-bridge': 'React 18 bridge',
+  'api-compatibility': 'API compatibility',
+  'jsx-transform': 'JSX transform',
+  'react-19-upgrade': 'React 19 upgrade',
+  'source-modernization': 'Source modernization',
+  validation: 'Validation',
+  'final-review': 'Final review',
+};
+
+const REACT_19_PHASE_DESCRIPTIONS: Readonly<Record<ReactMigrationPhase, string>> = {
+  preflight: 'Validate repository, package manager, and migration prerequisites.',
+  tooling: 'Align bundler/build tooling for stable React 19 migration runs.',
+  'react-18-bridge':
+    'Bridge React 16/17 projects through React 18 compatibility before React 19.',
+  'api-compatibility':
+    'Resolve deprecated or legacy React API usage incompatible with modern React.',
+  'jsx-transform': 'Enable and verify the modern JSX transform path.',
+  'react-19-upgrade': 'Upgrade React/React DOM packages and core dependency alignment.',
+  'source-modernization':
+    'Modernize project source patterns and supporting readiness tracks.',
+  validation: 'Run lint/typecheck/test/build gates to verify migration stability.',
+  'final-review': 'Confirm migration outcomes and capture final rollout review.',
+};
+
+const RISK_ENGINE_PHASE_TO_CANONICAL_PHASE: Readonly<
+  Record<React19RiskEnginePhase, ReactMigrationPhase>
+> = {
+  preflight: 'preflight',
+  tooling: 'tooling',
+  'react-bridge': 'react-18-bridge',
+  'api-compatibility': 'api-compatibility',
+  'dependency-modernization': 'react-19-upgrade',
+  'typescript-readiness': 'source-modernization',
+  'routing-readiness': 'source-modernization',
+  'testing-readiness': 'validation',
+  'validation-readiness': 'validation',
+};
+
+const JSX_TRANSFORM_RISK_ISSUE_CODES = new Set<string>([
+  'jsx-transform-classic',
+  'jsx-transform-config-not-detected',
+  'jsx-transform-outdated',
+]);
+
+export function getReactMigrationPhaseLabel(phase: ReactMigrationPhase): string {
+  return REACT_19_PHASE_LABELS[phase];
+}
+
+export function getReactMigrationPhaseDescription(phase: ReactMigrationPhase): string {
+  return REACT_19_PHASE_DESCRIPTIONS[phase];
+}
+
+export function getReactMigrationPhaseOrder(phase: ReactMigrationPhase): number {
+  return REACT_19_CANONICAL_PHASE_ORDER.indexOf(phase);
+}
+
+/**
+ * Adapter for R3 risk-engine phases into canonical plan phases.
+ *
+ * JSX transform issue codes are always elevated to the dedicated `jsx-transform`
+ * phase, even when risk-engine metadata tags them as `tooling`.
+ */
+export function mapRiskEnginePhaseToReactMigrationPhase(
+  phase: React19RiskEnginePhase,
+  sourceIssueCode?: string,
+): ReactMigrationPhase {
+  if (
+    phase === 'tooling' &&
+    sourceIssueCode !== undefined &&
+    (JSX_TRANSFORM_RISK_ISSUE_CODES.has(sourceIssueCode) ||
+      sourceIssueCode.startsWith('jsx-transform-'))
+  ) {
+    return 'jsx-transform';
+  }
+  return RISK_ENGINE_PHASE_TO_CANONICAL_PHASE[phase];
+}
 
 /**
  * Recommended phases per migration track.
