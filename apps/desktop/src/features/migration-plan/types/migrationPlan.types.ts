@@ -68,6 +68,22 @@ export function isFileChangingPlanStepExecutionType(
 }
 
 /**
+ * Canonical rollback policy for planner/execution contract V2.
+ *
+ * Current execution architecture does not create per-step commits, so all
+ * file-changing automated steps should default to discarding workspace
+ * changes. Manual/validation-only steps remain `manual`.
+ */
+export function resolveMigrationPlanStepRollbackStrategy(
+  executionType: MigrationPlanStepV2ExecutionType,
+): MigrationPlanStepV2RollbackStrategy {
+  if (isFileChangingPlanStepExecutionType(executionType)) {
+    return 'discard-worktree-changes';
+  }
+  return 'manual';
+}
+
+/**
  * Canonical step run requirements (R5 Step 7).
  *
  * - File-changing steps require workspace + approval + post-run validation.

@@ -529,6 +529,9 @@ function PlanStepsCard({
                     ? 'Post-run validation required'
                     : 'No post-run validation gate'}
                 </Badge>
+                <Badge tone="neutral" variant="outline" uppercase>
+                  Rollback: {step.rollbackStrategy}
+                </Badge>
               </div>
               <p className="mt-2 text-xs text-ink-muted">{step.description}</p>
               <p className="mt-2 text-2xs text-ink-subtle">

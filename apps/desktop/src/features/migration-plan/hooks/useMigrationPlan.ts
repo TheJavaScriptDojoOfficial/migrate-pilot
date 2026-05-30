@@ -32,7 +32,10 @@ import type {
   MigrationPlanState,
   MigrationPlanStatus,
 } from '../types/migrationPlan.types';
-import { resolveMigrationPlanStepRunRequirements } from '../types/migrationPlan.types';
+import {
+  resolveMigrationPlanStepRollbackStrategy,
+  resolveMigrationPlanStepRunRequirements,
+} from '../types/migrationPlan.types';
 
 const WORKFLOW_STEP_ID = 'plan';
 
@@ -224,6 +227,7 @@ function normalizePlanForStoreCompatibility(plan: MigrationPlan): MigrationPlan 
       requiresWorkspace?: boolean;
       requiresApprovalBeforeRun?: boolean;
       requiresValidationAfterRun?: boolean;
+      rollbackStrategy?: (typeof step)['rollbackStrategy'];
     };
     return {
       ...step,
@@ -232,6 +236,9 @@ function normalizePlanForStoreCompatibility(plan: MigrationPlan): MigrationPlan 
         compatibilityStep.requiresApprovalBeforeRun ?? runRequirements.requiresApprovalBeforeRun,
       requiresValidationAfterRun:
         compatibilityStep.requiresValidationAfterRun ?? runRequirements.requiresValidationAfterRun,
+      rollbackStrategy:
+        compatibilityStep.rollbackStrategy ??
+        resolveMigrationPlanStepRollbackStrategy(step.executionType),
     };
   });
   return {

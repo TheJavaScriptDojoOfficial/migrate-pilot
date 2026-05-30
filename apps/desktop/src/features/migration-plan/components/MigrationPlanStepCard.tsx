@@ -71,6 +71,9 @@ export function MigrationPlanStepCard({
           >
             {step.requiresValidationAfterRun ? 'Post-run validation required' : 'No post-run validation'}
           </Badge>
+          <Badge tone="neutral" variant="outline" uppercase>
+            Rollback: {step.rollbackStrategy}
+          </Badge>
           <Badge tone={STEP_STATUS_TONE[step.status]} variant="outline" uppercase>
             {step.status}
           </Badge>

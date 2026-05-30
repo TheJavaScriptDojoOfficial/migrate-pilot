@@ -22,7 +22,10 @@ import type {
   React19PlanPhaseSummary,
   React19ValidationStrategy,
 } from '../types/migrationPlan.types';
-import { resolveMigrationPlanStepRunRequirements } from '../types/migrationPlan.types';
+import {
+  resolveMigrationPlanStepRollbackStrategy,
+  resolveMigrationPlanStepRunRequirements,
+} from '../types/migrationPlan.types';
 
 const VALIDATION_SCRIPT_PRIORITY = ['build', 'test', 'lint', 'typecheck'] as const;
 const SUPPORTED_SCRIPTED_EXECUTOR_KEYS = new Set<string>(['package-json-dependency-update']);
@@ -205,7 +208,7 @@ export function buildReact19PlanStepsFromRiskEngine(
       requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
       expectedCommands: validationStrategy.baselineCommands,
       validationCommands: validationStrategy.baselineCommands,
-      rollbackStrategy: 'manual',
+      rollbackStrategy: resolveMigrationPlanStepRollbackStrategy('validation-only'),
       ...(baselineExecution !== undefined ? { execution: baselineExecution } : {}),
       sourceIssueCodes: [],
       expectedChangeScope: ['Validation command output only (no file modifications)'],
@@ -256,7 +259,7 @@ export function buildReact19PlanStepsFromRiskEngine(
       requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
       expectedCommands: validationStrategy.finalCommands,
       validationCommands: validationStrategy.finalCommands,
-      rollbackStrategy: 'manual',
+      rollbackStrategy: resolveMigrationPlanStepRollbackStrategy('validation-only'),
       ...(finalValidationExecution !== undefined ? { execution: finalValidationExecution } : {}),
       sourceIssueCodes: [],
       expectedChangeScope: ['Validation command output only (no file modifications)'],
@@ -301,7 +304,7 @@ export function buildReact19PlanStepsFromRiskEngine(
     requiresValidationAfterRun: finalReviewRequirements.requiresValidationAfterRun,
     expectedCommands: validationStrategy.finalCommands,
     validationCommands: validationStrategy.finalCommands,
-    rollbackStrategy: 'manual',
+    rollbackStrategy: resolveMigrationPlanStepRollbackStrategy('manual'),
     ...(finalReviewExecution !== undefined ? { execution: finalReviewExecution } : {}),
     sourceIssueCodes: [],
     expectedChangeScope: ['Migration summary and release readiness checklist'],
@@ -641,10 +644,7 @@ function createGroupedStep(
     expectedChangedFiles: expectedFilesForIssueCodes(sourceIssueCodes),
     expectedCommands: validationCommands,
     validationCommands,
-    rollbackStrategy:
-      phase === 'react-19-upgrade' || phase === 'react-18-bridge'
-        ? 'git-revert'
-        : 'manual',
+    rollbackStrategy: resolveMigrationPlanStepRollbackStrategy(executionType),
     ...(execution !== undefined ? { execution } : {}),
     sourceIssueCodes,
     expectedChangeScope: expectedChangeScopeForPhase(phase),
