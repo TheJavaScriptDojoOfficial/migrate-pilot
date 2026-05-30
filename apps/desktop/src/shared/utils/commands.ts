@@ -40,6 +40,64 @@ export interface ProjectReadMetadataRaw {
   readonly currentBranch: string | null;
 }
 
+/**
+ * Raw payload returned by the read-only `project_scan` Tauri command.
+ *
+ * Mirrors `ProjectScanRaw` in `commands/project.rs`. The UI never consumes
+ * this directly — the scanner feature converts it into the strongly-typed
+ * {@link import('@features/scanner/types/scanner.types').ScanReport} via
+ * `scannerService.buildScanReport`.
+ */
+export interface ProjectScanRaw {
+  readonly path: string;
+  readonly folderName: string;
+  readonly packageJsonText: string | null;
+  readonly lockFiles: {
+    readonly npm: boolean;
+    readonly yarn: boolean;
+    readonly pnpm: boolean;
+    readonly bun: boolean;
+  };
+  readonly tsconfigPresent: boolean;
+  readonly isGitRepository: boolean;
+  readonly currentBranch: string | null;
+  /** `null` when git cleanliness could not be determined safely. */
+  readonly gitClean: boolean | null;
+  readonly source: ProjectScanSourceRaw;
+  readonly limits: ProjectScanLimitsRaw;
+  readonly durationMs: number;
+}
+
+export interface ProjectScanSourceRaw {
+  readonly totalFilesScanned: number;
+  readonly jsFiles: number;
+  readonly jsxFiles: number;
+  readonly tsFiles: number;
+  readonly tsxFiles: number;
+  readonly styleFiles: number;
+  readonly jsonFiles: number;
+  readonly classComponentIndicators: number;
+  readonly deprecatedLifecycleIndicators: readonly ProjectScanLifecycleRaw[];
+  readonly reactDomRenderUsages: number;
+  readonly legacyContextIndicators: number;
+  readonly routerUsageIndicators: number;
+  readonly scannedDirectories: readonly string[];
+  readonly skippedDirectories: readonly string[];
+}
+
+export interface ProjectScanLifecycleRaw {
+  readonly method: string;
+  readonly fileCount: number;
+  readonly exampleFile: string | null;
+}
+
+export interface ProjectScanLimitsRaw {
+  readonly maxFiles: number;
+  readonly maxFileBytes: number;
+  readonly filesSkippedTooLarge: number;
+  readonly truncated: boolean;
+}
+
 export interface CommandPayloads {
   project_select: {
     input: { suggestedPath?: string };
@@ -52,6 +110,10 @@ export interface CommandPayloads {
   project_read_metadata: {
     input: { path: string };
     output: ProjectReadMetadataRaw;
+  };
+  project_scan: {
+    input: { path: string };
+    output: ProjectScanRaw;
   };
   scan_start: {
     input: { projectId: string };

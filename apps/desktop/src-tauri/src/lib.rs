@@ -34,6 +34,7 @@ pub fn run() {
             commands::project::project_select,
             commands::project::project_pick_folder,
             commands::project::project_read_metadata,
+            commands::project::project_scan,
             commands::scan::scan_start,
             commands::scan::scan_get_report,
             commands::workspace::workspace_create,
