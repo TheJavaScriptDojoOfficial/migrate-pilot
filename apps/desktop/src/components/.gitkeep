@@ -1,0 +1,4 @@
+# Placeholder for higher-level cross-feature components (e.g. layout shells,
+# command palettes, modals). Add components here only when they are reused
+# across at least two features. Otherwise prefer keeping components co-located
+# inside the relevant `src/features/<feature>/components/` folder.
