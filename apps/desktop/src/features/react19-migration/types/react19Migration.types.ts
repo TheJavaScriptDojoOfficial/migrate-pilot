@@ -206,62 +206,124 @@ export const REACT_MIGRATION_PHASES_BY_TRACK: Readonly<
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Coarse "buckets" the report UI dispatches on to pick tone/iconography:
+ *
+ *   `supported`  React 16/17/18 source, react and react-dom present and
+ *                aligned. Plan generation is unlocked.
+ *   `blocked`    A hard precondition is missing (no package.json, no
+ *                package manager, no react / react-dom, major out of
+ *                supported range, mismatched majors, …). Plan generation
+ *                must be refused.
+ *   `warning`    The project is already on React 19. Migration is not
+ *                required but the scanner is not in an error state.
+ *   `unknown`    A required version string could not be parsed safely
+ *                (e.g. `workspace:*`, `file:../react`, `latest`). The
+ *                scanner cannot make a confident decision; plan
+ *                generation is gated until the user resolves the
+ *                ambiguity.
+ */
+export type React19SupportLevel =
+  | 'supported'
+  | 'blocked'
+  | 'warning'
+  | 'unknown';
+
+/**
  * Stable codes describing why React 19 migration planning is or is not
  * supported for the scanned project. Switched exhaustively by the UI so
  * each blocker can render a tailored copy line.
  *
- *   `supported`                Source major is 16, 17, or 18 — migration
- *                              planning can proceed.
- *   `package-json-missing`     The deterministic scanner could not locate
- *                              `package.json`.
- *   `react-not-found`          `package.json` parsed but neither
- *                              `dependencies` nor `devDependencies`
- *                              declared `react`.
- *   `react-version-unparseable`
- *                              A `react` entry exists but its version
- *                              string did not yield a numeric major.
- *   `react-major-below-minimum`
- *                              Detected React major is below 16
- *                              (e.g. 0.x / 15.x).
- *   `react-major-above-target`
- *                              Detected React major is above 19 (a
- *                              future React version we do not plan for).
- *   `react-major-is-target`    Project already runs React 19 — nothing
- *                              to migrate.
- *   `react-dom-major-mismatch` `react` and `react-dom` declare different
- *                              majors. The migration cannot proceed
- *                              until they agree.
+ *   `supported-react-16`               React 16 source, plan can proceed.
+ *   `supported-react-17`               React 17 source, plan can proceed.
+ *   `supported-react-18`               React 18 source, plan can proceed.
+ *   `package-json-missing`             The deterministic scanner could
+ *                                      not locate `package.json`.
+ *   `package-manager-not-detected`     No supported lockfile
+ *                                      (`package-lock.json`, `yarn.lock`,
+ *                                      `pnpm-lock.yaml`, `bun.lockb` /
+ *                                      `bun.lock`) was found.
+ *   `react-not-found`                  `package.json` parsed but neither
+ *                                      `dependencies` nor
+ *                                      `devDependencies` declared
+ *                                      `react`.
+ *   `react-version-unparseable`        `react` is declared but the
+ *                                      version string did not yield a
+ *                                      numeric major (e.g.
+ *                                      `workspace:*`, `latest`).
+ *   `react-major-below-minimum`        Detected React major is below 16
+ *                                      (e.g. 0.x / 15.x).
+ *   `react-major-above-target`         Detected React major is above 19
+ *                                      (a future React version we do not
+ *                                      plan for).
+ *   `react-major-is-target`            Project already runs React 19 —
+ *                                      nothing to migrate.
+ *   `react-dom-not-found`              `react-dom` is not declared.
+ *   `react-dom-version-unparseable`    `react-dom` is declared but its
+ *                                      version string did not yield a
+ *                                      numeric major.
+ *   `react-dom-major-mismatch`         `react` and `react-dom` declare
+ *                                      different majors. The migration
+ *                                      cannot proceed until they agree.
  */
 export type React19SupportReasonCode =
-  | 'supported'
+  | 'supported-react-16'
+  | 'supported-react-17'
+  | 'supported-react-18'
   | 'package-json-missing'
+  | 'package-manager-not-detected'
   | 'react-not-found'
   | 'react-version-unparseable'
   | 'react-major-below-minimum'
   | 'react-major-above-target'
   | 'react-major-is-target'
+  | 'react-dom-not-found'
+  | 'react-dom-version-unparseable'
   | 'react-dom-major-mismatch';
+
+/**
+ * Concrete package manager inferred from the project lockfile (mirrors
+ * `PackageManager` from `@features/project-selection`). Redeclared here
+ * so the React 19 status type stays a leaf module with no inbound
+ * dependencies on other features.
+ */
+export type React19PackageManager =
+  | 'npm'
+  | 'yarn'
+  | 'pnpm'
+  | 'bun'
+  | 'unknown';
 
 /**
  * Structured status describing whether a project qualifies for the V1
  * React 19 migration path.
  *
- * `isSupported` is `true` only when the source React major is 16, 17, or
- * 18 AND (when declared) `react-dom`'s major matches `react`'s. In every
- * other case `isSupported` is `false` and `reason` explains why so the
- * report can surface a clear "migration blocked" message instead of
- * pretending a plan can be generated.
+ * Shape contract
+ * --------------
+ *   - `isSupported` is `true` only when the source React major is 16, 17,
+ *     or 18 AND `react-dom` is declared, parseable, and its major matches
+ *     `react`. In every other case `isSupported` is `false`.
+ *   - `status` is the coarse bucket the UI dispatches on (`supported` /
+ *     `blocked` / `warning` / `unknown`).
+ *   - `canGeneratePlan` is the single boolean Planner V2 and the
+ *     migration-plan UI must gate on. It is always `true` for
+ *     `status === 'supported'` and `false` otherwise.
+ *   - `message` is a fully-formed, user-facing copy line tailored to the
+ *     `code`. The UI never has to compose its own sentence — it can
+ *     surface `message` directly.
  *
  * The `sourceReactVersion` / `sourceReactMajor` / `reactDomVersion` /
- * `reactDomMajor` fields are mirrored on both the supported and the
- * unsupported branch so consumers always have the same shape to read.
+ * `reactDomMajor` / `packageManager` fields are mirrored on every branch
+ * so consumers always have the same shape to read.
  */
 export interface React19SupportStatus {
   readonly isSupported: boolean;
+  readonly status: React19SupportLevel;
   readonly code: React19SupportReasonCode;
-  readonly reason?: string;
+  readonly message: string;
+  readonly canGeneratePlan: boolean;
   readonly sourceReactVersion?: string;
   readonly sourceReactMajor?: number;
   readonly reactDomVersion?: string;
   readonly reactDomMajor?: number;
+  readonly packageManager?: React19PackageManager;
 }

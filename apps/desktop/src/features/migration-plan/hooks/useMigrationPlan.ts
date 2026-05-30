@@ -83,6 +83,27 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
   ...INITIAL_STATE,
 
   generatePlan: async (scanReport) => {
+    // R2 step 2 — refuse to generate when the deterministic React 19
+    // support status says the project is not eligible. The check is
+    // defensive: the UI already disables the button, but we don't want
+    // a programmatic caller to bypass the gate either.
+    //
+    // Older scan reports (pre-R2) don't carry `react19SupportStatus`;
+    // treat them as backwards-compatible "allowed" so legacy flows are
+    // not broken by this milestone.
+    const support = scanReport.react19SupportStatus;
+    if (support !== undefined && support.canGeneratePlan === false) {
+      set({
+        status: 'failed',
+        error: {
+          kind: 'generator-failed',
+          message: support.message,
+        },
+      });
+      useWorkflowProgressStore.getState().markStepIncomplete(WORKFLOW_STEP_ID);
+      return;
+    }
+
     set({
       status: 'generating',
       error: undefined,

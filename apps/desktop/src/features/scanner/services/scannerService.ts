@@ -134,10 +134,13 @@ export function buildScanReport(raw: ProjectScanRaw): ScanReport {
     durationMs: raw.durationMs,
   };
 
-  // R2 step 1 — React 19 migration context. Pure, deterministic; uses
-  // only the version strings the scanner already extracted.
+  // R2 step 2 — React 19 migration context + full support eligibility.
+  // Pure and deterministic; uses only signals the scanner already
+  // extracted (package.json text, declared versions, inferred package
+  // manager from lockfiles).
   const react19 = computeReact19MigrationContext({
     packageJsonPresent: raw.packageJsonText !== null,
+    packageManager: dependencies.packageManager,
     ...(dependencies.reactVersion !== undefined
       ? { reactVersion: dependencies.reactVersion }
       : {}),

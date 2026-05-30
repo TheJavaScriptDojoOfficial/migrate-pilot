@@ -18,6 +18,7 @@ import { StatusIndicator } from '@shared/ui/StatusIndicator';
 import { StepEyebrow } from '@shared/ui/StepEyebrow';
 import { ROUTES } from '@shared/constants/routes';
 
+import type { React19SupportStatus } from '@features/react19-migration';
 import {
   selectScanReport,
   selectScanStatus,
@@ -78,6 +79,15 @@ export function MigrationPlanScreen(): JSX.Element {
   const isApproved = planStatus === 'approved';
   const isDraft = planStatus === 'generated';
 
+  // R2 step 2 — plan generation gate. The scanner now emits a structured
+  // `react19SupportStatus.canGeneratePlan`; if it is `false`, the entire
+  // plan-generation pathway must be refused. Pre-R2 reports do not carry
+  // the field — those are treated as allowed for backwards compatibility.
+  const supportStatus = scanReport?.react19SupportStatus;
+  const isPlanGenerationGated =
+    supportStatus !== undefined && supportStatus.canGeneratePlan === false;
+  const gateReason = supportStatus?.message;
+
   // Invalidate the plan if the upstream ScanReport changes. This effect
   // is the single source of truth for the cross-store invariant: a plan is
   // only valid for the ScanReport id it was generated from.
@@ -85,7 +95,8 @@ export function MigrationPlanScreen(): JSX.Element {
     clearPlanIfScanChanges(scanReport?.id);
   }, [scanReport?.id, clearPlanIfScanChanges]);
 
-  const canGenerate = hasScanReport && planStatus !== 'generating';
+  const canGenerate =
+    hasScanReport && planStatus !== 'generating' && !isPlanGenerationGated;
   const canApprove = isDraft && plan !== undefined;
   const canContinue = isApproved;
 
@@ -112,7 +123,10 @@ export function MigrationPlanScreen(): JSX.Element {
               : {
                   disabledGenerateReason: !hasScanReport
                     ? 'A completed scan report is required to generate a plan.'
-                    : 'Plan generation is already in progress.',
+                    : isPlanGenerationGated
+                      ? (gateReason ??
+                        'Plan generation is blocked because this project is not eligible for the React 19 migration pilot.')
+                      : 'Plan generation is already in progress.',
                 })}
             {...(canApprove
               ? {}
@@ -147,6 +161,11 @@ export function MigrationPlanScreen(): JSX.Element {
         <div className="mx-auto flex max-w-5xl flex-col gap-6">
           {!hasScanReport ? (
             <MigrationPlanEmptyState
+              onGoToScanner={() => navigate(ROUTES.scanner)}
+            />
+          ) : isPlanGenerationGated && supportStatus !== undefined ? (
+            <BlockedByEligibilityState
+              status={supportStatus}
               onGoToScanner={() => navigate(ROUTES.scanner)}
             />
           ) : planStatus === 'idle' ? (
@@ -229,6 +248,116 @@ function IdleState({ projectName, onGenerate }: IdleStateProps): JSX.Element {
 
       <PlanGuide />
     </>
+  );
+}
+
+/**
+ * Rendered when the scanner has completed but the project's React 19
+ * support status forbids plan generation (missing package.json, no
+ * package manager, unsupported React major, unparseable versions, etc.).
+ *
+ * The screen never tries to "soften" the block — the planner is a
+ * one-way gate and we want the user to fix the underlying issue and
+ * re-run the scan rather than chase a phantom plan.
+ */
+function BlockedByEligibilityState({
+  status,
+  onGoToScanner,
+}: {
+  readonly status: React19SupportStatus;
+  readonly onGoToScanner: () => void;
+}): JSX.Element {
+  const tone =
+    status.status === 'warning'
+      ? 'warning'
+      : status.status === 'unknown'
+        ? 'neutral'
+        : 'danger';
+  const title =
+    status.status === 'warning'
+      ? 'React 19 migration is not required for this project'
+      : status.status === 'unknown'
+        ? 'React 19 migration eligibility could not be determined'
+        : 'React 19 migration plan is blocked';
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>
+            Plan generation is gated by the deterministic React 19
+            eligibility check from the readiness report. Fix the
+            underlying issue and re-run the scan to unlock the plan.
+          </CardDescription>
+        </div>
+        <Badge tone={tone} variant="soft" withDot uppercase>
+          {status.status === 'warning'
+            ? 'Not required'
+            : status.status === 'unknown'
+              ? 'Needs review'
+              : 'Blocked'}
+        </Badge>
+      </CardHeader>
+      <CardSection>
+        <p className="rounded-md border border-canvas-border bg-canvas-overlay px-3 py-2 text-xs leading-relaxed text-ink">
+          {status.message}
+        </p>
+      </CardSection>
+      <CardSection label="Detected">
+        <ul className="grid gap-1 text-xs text-ink-muted sm:grid-cols-2">
+          <DetectedRow
+            label="react"
+            value={status.sourceReactVersion ?? 'not detected'}
+          />
+          <DetectedRow
+            label="react-dom"
+            value={status.reactDomVersion ?? 'not detected'}
+          />
+          <DetectedRow
+            label="React major"
+            value={
+              status.sourceReactMajor !== undefined
+                ? `React ${status.sourceReactMajor}`
+                : '—'
+            }
+          />
+          <DetectedRow
+            label="Package manager"
+            value={status.packageManager ?? 'not detected'}
+          />
+        </ul>
+      </CardSection>
+      <div className="mt-4 flex items-center gap-2">
+        <Button
+          variant="secondary"
+          size="md"
+          leadingIcon={<Icon name="scan" />}
+          onClick={onGoToScanner}
+        >
+          Back to scanner
+        </Button>
+        <span className="text-2xs text-ink-subtle">
+          Plan generation stays disabled until {`canGeneratePlan`} is true.
+        </span>
+      </div>
+    </Card>
+  );
+}
+
+function DetectedRow({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}): JSX.Element {
+  return (
+    <li className="flex items-center justify-between gap-3 rounded-md border border-canvas-border bg-canvas-subtle px-3 py-1.5">
+      <span className="text-2xs uppercase tracking-[0.14em] text-ink-subtle">
+        {label}
+      </span>
+      <span className="truncate font-mono text-xs text-ink">{value}</span>
+    </li>
   );
 }
 

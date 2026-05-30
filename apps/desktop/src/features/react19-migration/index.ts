@@ -9,6 +9,8 @@
  */
 export type {
   React19MigrationContext,
+  React19PackageManager,
+  React19SupportLevel,
   React19SupportReasonCode,
   React19SupportStatus,
   ReactMigrationPhase,

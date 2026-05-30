@@ -11,23 +11,27 @@ import { cn } from '@shared/utils/cn';
 
 import type {
   React19MigrationContext,
+  React19PackageManager,
+  React19SupportLevel,
   React19SupportStatus,
   ReactMigrationPhase,
   ReactMigrationTrack,
 } from '@features/react19-migration';
 
 /**
- * ScanReact19ContextCard — R2 step 1 surface for the React 19 migration
- * context.
+ * ScanReact19ContextCard — R2 step 2 surface for the React 19 migration
+ * context and support eligibility.
  *
  * Renders one of two layouts:
  *
- *   - When the project is supported (React 16 / 17 / 18), shows the
- *     source/target majors, the resolved migration track, and the
- *     recommended phase sequence.
- *   - When the project is unsupported, shows a clear "migration blocked"
- *     message that explains why so the user knows what to fix before
- *     planning becomes possible.
+ *   - When the project is supported (React 16 / 17 / 18 with aligned
+ *     react-dom), shows the source/target majors, the resolved migration
+ *     track, and the recommended phase sequence.
+ *   - When the project is unsupported / warning / unknown, shows a clear
+ *     status banner with the support level, package manager, and the
+ *     deterministic reason message — plus an explicit "plan generation
+ *     allowed / blocked" indicator so the user knows whether the next
+ *     workflow step is reachable.
  *
  * The card never renders an actionable plan — Planner V2 owns that
  * surface. This card is read-only foundational data.
@@ -132,6 +136,43 @@ function SupportedContextCard({
         </ol>
       </CardSection>
 
+      {status !== undefined ? (
+        <CardSection label="Eligibility">
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field
+              label="Support status"
+              value={LEVEL_LABEL[status.status]}
+              tone={LEVEL_TONE[status.status]}
+              uppercase
+            />
+            <Field
+              label="Plan generation"
+              value={
+                status.canGeneratePlan ? 'Allowed' : 'Blocked'
+              }
+              tone={status.canGeneratePlan ? 'success' : 'danger'}
+              uppercase
+            />
+            <Field
+              label="Package manager"
+              value={PACKAGE_MANAGER_LABEL[
+                status.packageManager ?? 'unknown'
+              ]}
+              tone={
+                status.packageManager !== undefined &&
+                status.packageManager !== 'unknown'
+                  ? 'info'
+                  : 'warning'
+              }
+              mono
+            />
+          </dl>
+          <p className="mt-3 text-xs leading-relaxed text-ink-muted">
+            {status.message}
+          </p>
+        </CardSection>
+      ) : null}
+
       {status?.reactDomVersion !== undefined ? (
         <CardSection label="react-dom alignment">
           <p className="text-xs text-ink-muted">
@@ -169,24 +210,31 @@ interface UnsupportedContextCardProps {
 function UnsupportedContextCard({
   status,
 }: UnsupportedContextCardProps): JSX.Element {
+  const tone = LEVEL_TONE[status.status];
+  const headerLabel = LEVEL_BADGE_LABEL[status.status];
+  const headerDescription = LEVEL_DESCRIPTION[status.status];
+  const banner = LEVEL_BANNER_STYLE[status.status];
+
   return (
     <Card>
       <CardHeader>
         <div>
           <CardTitle>React 19 migration context</CardTitle>
-          <CardDescription>
-            React 19 migration planning is blocked because this project does
-            not use a supported React 16, 17, or 18 version.
-          </CardDescription>
+          <CardDescription>{headerDescription}</CardDescription>
         </div>
-        <Badge tone="danger" variant="soft" withDot uppercase>
-          Unsupported
+        <Badge tone={tone} variant="soft" withDot uppercase>
+          {headerLabel}
         </Badge>
       </CardHeader>
 
       <CardSection>
-        <p className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger">
-          {status.reason ?? FALLBACK_REASON}
+        <p
+          className={cn(
+            'rounded-md border px-3 py-2 text-xs leading-relaxed',
+            banner,
+          )}
+        >
+          {status.message}
         </p>
       </CardSection>
 
@@ -222,11 +270,28 @@ function UnsupportedContextCard({
             }
             tone={status.reactDomMajor !== undefined ? 'warning' : 'neutral'}
           />
+          <Field
+            label="Package manager"
+            value={PACKAGE_MANAGER_LABEL[status.packageManager ?? 'unknown']}
+            tone={
+              status.packageManager !== undefined &&
+              status.packageManager !== 'unknown'
+                ? 'info'
+                : 'warning'
+            }
+            mono
+          />
           <Field label="Target React" value="React 19" tone="info" />
+          <Field
+            label="Plan generation"
+            value={status.canGeneratePlan ? 'Allowed' : 'Blocked'}
+            tone={status.canGeneratePlan ? 'success' : 'danger'}
+            uppercase
+          />
           <Field
             label="Status code"
             value={status.code}
-            tone="danger"
+            tone={tone}
             mono
             uppercase
           />
@@ -236,8 +301,7 @@ function UnsupportedContextCard({
       <CardSection>
         <p className="inline-flex items-center gap-1.5 text-2xs text-ink-subtle">
           <Icon name="shield" className="h-3 w-3 text-warning" />
-          Fix the React version setup, then re-run the scan to unblock the
-          React 19 migration plan.
+          {LEVEL_FOOTER[status.status]}
         </p>
       </CardSection>
     </Card>
@@ -272,8 +336,63 @@ const PHASE_LABEL: Record<ReactMigrationPhase, string> = {
   'final-review': 'Final review',
 };
 
-const FALLBACK_REASON =
-  'React 19 migration planning is blocked because this project does not use a supported React 16, 17, or 18 version.';
+const LEVEL_LABEL: Record<React19SupportLevel, string> = {
+  supported: 'Supported',
+  blocked: 'Blocked',
+  warning: 'Warning',
+  unknown: 'Unknown',
+};
+
+const LEVEL_BADGE_LABEL: Record<React19SupportLevel, string> = {
+  supported: 'Supported',
+  blocked: 'Blocked',
+  warning: 'Not required',
+  unknown: 'Needs review',
+};
+
+const LEVEL_TONE: Record<React19SupportLevel, BadgeTone> = {
+  supported: 'success',
+  blocked: 'danger',
+  warning: 'warning',
+  unknown: 'neutral',
+};
+
+const LEVEL_DESCRIPTION: Record<React19SupportLevel, string> = {
+  supported:
+    'This project is eligible for the React 19 migration pilot. Plan generation is unlocked.',
+  blocked:
+    'React 19 migration planning is blocked. Resolve the issue below before continuing.',
+  warning:
+    'React 19 migration planning is not required for this project. See the reason below for details.',
+  unknown:
+    'React 19 migration eligibility could not be determined safely. See the reason below.',
+};
+
+const LEVEL_FOOTER: Record<React19SupportLevel, string> = {
+  supported:
+    'Deterministic eligibility check — no AI involved. Continue to the React 19 migration plan when ready.',
+  blocked:
+    'Fix the React project setup, then re-run the scan to unblock the React 19 migration plan.',
+  warning:
+    'No migration is needed. You can pick a different React 16/17/18 project to use the pilot.',
+  unknown:
+    'Pin a standard semver range for the affected dependency, then re-run the scan.',
+};
+
+const LEVEL_BANNER_STYLE: Record<React19SupportLevel, string> = {
+  supported: 'border-success/30 bg-success-soft text-success',
+  blocked: 'border-danger/30 bg-danger-soft text-danger',
+  warning: 'border-warning/30 bg-warning-soft text-warning',
+  unknown: 'border-canvas-border-strong bg-canvas-overlay text-ink-muted',
+};
+
+const PACKAGE_MANAGER_LABEL: Record<React19PackageManager, string> = {
+  npm: 'npm',
+  yarn: 'yarn',
+  pnpm: 'pnpm',
+  bun: 'bun',
+  unknown: 'not detected',
+};
 
 interface PhaseChipProps {
   readonly phase: ReactMigrationPhase;
