@@ -559,6 +559,20 @@ function PlanStepsCard({
                   </Badge>
                 ))}
               </div>
+              {step.expectedChangedFiles !== undefined && step.expectedChangedFiles.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {step.expectedChangedFiles.map((file) => (
+                    <Badge
+                      key={`files:${step.id}:${file}`}
+                      tone="neutral"
+                      variant="soft"
+                      className="font-mono"
+                    >
+                      files: {file}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-2 text-2xs text-ink-subtle">
                 Issue codes: {step.issueCodes.join(', ') || 'none'}
               </div>

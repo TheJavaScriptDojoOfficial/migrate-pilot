@@ -41,10 +41,30 @@ interface ValidationCommandCatalog {
   readonly typecheck?: string;
 }
 
+/**
+ * Scanner-derived facts the planner needs when computing
+ * `expectedChangedFiles` for each step (R5 Step 10).
+ *
+ * The planner stays free of direct scanner-report shape lookups inside
+ * deeply nested helpers — everything required for a stable expected-file
+ * decision is normalized here once and threaded through the step builder.
+ */
+interface ExpectedFilesContext {
+  readonly lockFiles: readonly string[];
+  readonly babelConfigFiles: readonly string[];
+  readonly webpackConfigFiles: readonly string[];
+  readonly hasTypeScriptConfig: boolean;
+  readonly hasScssFiles: boolean;
+  readonly hasSassFiles: boolean;
+  /** Map from `React19CompatibilityIssue.code` → its sampled `filePaths`. */
+  readonly issueFilePathsByCode: Readonly<Record<string, readonly string[]>>;
+}
+
 interface StepCommandContext {
   readonly packageManagerKnown: boolean;
   readonly installCommand?: string;
   readonly validationCatalog: ValidationCommandCatalog;
+  readonly expectedFiles: ExpectedFilesContext;
 }
 
 export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19MigrationPlanV2 {
@@ -188,6 +208,7 @@ export function buildReact19PlanStepsFromRiskEngine(
   const commandContext: StepCommandContext = {
     packageManagerKnown: scanReport.dependencies.packageManager !== 'unknown',
     validationCatalog: resolveValidationCommandCatalog(scanReport),
+    expectedFiles: buildExpectedFilesContext(scanReport),
     ...(installCommand !== undefined ? { installCommand } : {}),
   };
   const steps: MigrationPlanStepV2[] = [];
@@ -674,7 +695,16 @@ function createGroupedStep(
     requiresWorkspace: runRequirements.requiresWorkspace,
     requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
     requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
-    expectedChangedFiles: expectedFilesForIssueCodes(sourceIssueCodes),
+    ...(() => {
+      const expectedChangedFiles = resolveExpectedChangedFiles({
+        phase,
+        stepId: id,
+        executionType,
+        issueCodes: sourceIssueCodes,
+        ctx: commandContext.expectedFiles,
+      });
+      return expectedChangedFiles.length > 0 ? { expectedChangedFiles } : {};
+    })(),
     ...(stepCommands.expectedCommands.length > 0
       ? { expectedCommands: stepCommands.expectedCommands }
       : {}),
@@ -884,29 +914,173 @@ function expectedChangeScopeForPhase(phase: ReactMigrationPhase): readonly strin
   }
 }
 
-function expectedFilesForIssueCodes(issueCodes: readonly string[]): readonly string[] {
+/**
+ * Snapshot the scanner facts we need to compute `expectedChangedFiles`
+ * deterministically per step.
+ *
+ * Why this exists (R5 Step 10): the planner used to compute expected
+ * files purely from issue codes, which produced overly aggressive
+ * patterns (e.g. always `src/**\/*.tsx`) and ignored real signals like
+ * lockfile presence, Babel/Webpack config files, or scanner-reported
+ * sample file paths. We now ground every guess in the scan report so
+ * the plan never invents files that the scanner has no evidence for.
+ */
+function buildExpectedFilesContext(scanReport: ScanReport): ExpectedFilesContext {
+  const signals = scanReport.react19CompatibilityReport?.signals;
+  const lockFiles = scanReport.dependencies.lockFiles;
+  const babelConfigFiles = signals?.babelConfigFiles ?? [];
+  const webpackConfigFiles = signals?.webpackConfigFiles ?? [];
+  const hasTypeScriptConfig =
+    signals?.hasTypeScriptConfig === true || scanReport.projectInfo.hasTypeScript === true;
+  const hasScssFiles = (signals?.scssFileCount ?? 0) > 0;
+  const hasSassFiles = (signals?.sassFileCount ?? 0) > 0;
+
+  const issueFilePathsByCode: Record<string, readonly string[]> = {};
+  for (const issue of scanReport.react19CompatibilityReport?.issues ?? []) {
+    if (issue.filePaths === undefined || issue.filePaths.length === 0) continue;
+    issueFilePathsByCode[issue.code] = issue.filePaths;
+  }
+
+  return {
+    lockFiles,
+    babelConfigFiles,
+    webpackConfigFiles,
+    hasTypeScriptConfig,
+    hasScssFiles,
+    hasSassFiles,
+    issueFilePathsByCode,
+  };
+}
+
+/**
+ * Phase-, execution-, and scanner-aware expected changed files (R5 Step 10).
+ *
+ * Decisions follow these principles:
+ *   - Validation-only and manual steps never claim file changes.
+ *   - Dependency / React-upgrade work touches `package.json` plus any
+ *     detected lockfile(s); we never invent a lockfile name.
+ *   - JSX transform prefers detected Babel/TS config files; falls back to
+ *     a safe glob only when nothing was detected.
+ *   - API compatibility prefers scanner-provided `filePaths` samples; if
+ *     none exist we fall back to a single safe broad pattern instead of
+ *     making up several specific globs.
+ *   - node-sass extends the dependency template with style globs only when
+ *     the scanner actually observed SCSS / Sass files.
+ *   - Tooling and source-modernization fall back to the configuration
+ *     files plausibly involved (webpack config, tsconfig) — never source
+ *     files we have no evidence for.
+ */
+function resolveExpectedChangedFiles(input: {
+  readonly phase: ReactMigrationPhase;
+  readonly stepId: string;
+  readonly executionType: MigrationPlanStepV2ExecutionType;
+  readonly issueCodes: readonly string[];
+  readonly ctx: ExpectedFilesContext;
+}): readonly string[] {
+  const { phase, stepId, executionType, issueCodes, ctx } = input;
+
+  // Validation-only and manual steps do not modify files — omit.
+  if (executionType === 'validation-only' || executionType === 'manual') {
+    return [];
+  }
+
   const files = new Set<string>();
-  if (issueCodes.some((code) => code.includes('react-dom-render'))) {
-    files.add('src/index.*');
-  }
-  if (issueCodes.some((code) => code.includes('find-dom-node'))) {
-    files.add('src/**/*.tsx');
-  }
-  if (issueCodes.some((code) => code.includes('string-refs'))) {
-    files.add('src/**/*.jsx');
-    files.add('src/**/*.tsx');
-  }
-  if (issueCodes.some((code) => code.includes('legacy-context'))) {
-    files.add('src/**/*context*');
-  }
-  if (issueCodes.some((code) => code.includes('deprecated-lifecycle'))) {
-    files.add('src/**/*.tsx');
-    files.add('src/**/*.jsx');
-  }
-  if (issueCodes.some((code) => code.includes('node-sass'))) {
+
+  const addPackageAndLockfiles = (): void => {
     files.add('package.json');
-    files.add('**/*.scss');
+    for (const lockFile of ctx.lockFiles) {
+      files.add(lockFile);
+    }
+  };
+
+  const addScannerProvidedPathsForApiCompat = (): boolean => {
+    let added = false;
+    for (const code of issueCodes) {
+      const paths = ctx.issueFilePathsByCode[code];
+      if (paths === undefined) continue;
+      for (const path of paths) {
+        files.add(path);
+        added = true;
+      }
+    }
+    return added;
+  };
+
+  // node-sass is dependency-shaped even when grouped under a foundation
+  // dependencies step, so handle it before the generic phase branches.
+  if (issueCodes.includes('node-sass-detected')) {
+    addPackageAndLockfiles();
+    if (ctx.hasScssFiles) files.add('**/*.scss');
+    if (ctx.hasSassFiles) files.add('**/*.sass');
+    return Array.from(files);
   }
+
+  if (phase === 'react-19-upgrade') {
+    addPackageAndLockfiles();
+    return Array.from(files);
+  }
+
+  if (phase === 'react-18-bridge') {
+    addPackageAndLockfiles();
+    // Bridge work commonly touches the React entry point.
+    files.add('src/index.*');
+    return Array.from(files);
+  }
+
+  if (phase === 'jsx-transform') {
+    for (const babelFile of ctx.babelConfigFiles) {
+      files.add(babelFile);
+    }
+    if (ctx.hasTypeScriptConfig) {
+      files.add('tsconfig.json');
+    }
+    if (files.size === 0) {
+      files.add('babel.config.*');
+      files.add('.babelrc*');
+    }
+    return Array.from(files);
+  }
+
+  if (phase === 'api-compatibility') {
+    const usedScannerPaths = addScannerProvidedPathsForApiCompat();
+    if (!usedScannerPaths) {
+      files.add('src/**/*.{js,jsx,ts,tsx}');
+    }
+    return Array.from(files);
+  }
+
+  if (phase === 'tooling') {
+    if (issueCodes.includes('build-tool-react-scripts-very-old')) {
+      addPackageAndLockfiles();
+    }
+    if (issueCodes.includes('build-tool-webpack-major-too-old')) {
+      addPackageAndLockfiles();
+      for (const webpackFile of ctx.webpackConfigFiles) {
+        files.add(webpackFile);
+      }
+    }
+    return Array.from(files);
+  }
+
+  if (phase === 'source-modernization') {
+    if (
+      ctx.hasTypeScriptConfig ||
+      issueCodes.includes('typescript-not-configured') ||
+      issueCodes.includes('typescript-dependency-missing-but-files-present')
+    ) {
+      files.add('tsconfig.json');
+    }
+    if (issueCodes.includes('typescript-dependency-missing-but-files-present')) {
+      addPackageAndLockfiles();
+    }
+    return Array.from(files);
+  }
+
+  // preflight, validation (non validation-only), final-review: planner has
+  // no evidence of specific file targets — keep the list empty so the UI
+  // can omit it instead of misleading the user.
+  // stepId is intentionally available for future per-step overrides.
+  void stepId;
   return Array.from(files);
 }
 
