@@ -301,6 +301,41 @@ export interface React19MigrationPlanV2 {
 
 export type MigrationPlan = React19MigrationPlanV2;
 
+/**
+ * Plan Quality Status (R5 Step 14).
+ *
+ * Aggregates the per-step V2 contract metadata into a single
+ * plan-level health summary that the UI can render at a glance.
+ *
+ * Status rules (resolved by `resolvePlanQualityStatus`):
+ *   - `blocked` if any required plan context is invalid (plan-level
+ *     `blockedReasons`, `MigrationPlanStatus === 'blocked'`) or any
+ *     required step is blocked (`capability === 'blocked'` or
+ *     `status === 'blocked'`).
+ *   - `needs-review` if manual or non-validation-only unsupported
+ *     steps exist, or if any executable step is missing an executor
+ *     key, or if any step that requires validation has no validation
+ *     commands attached.
+ *   - `good` if every step is either available-executable or
+ *     validation-only and no blockers or contract holes exist.
+ *
+ * The numeric counters are reported honestly even when they don't
+ * match the status (e.g. `blocked` still surfaces `manualSteps`), so
+ * the UI can render the full mix alongside the status badge.
+ */
+export type PlanQualityStatusLevel = 'good' | 'needs-review' | 'blocked';
+
+export interface PlanQualityStatus {
+  readonly status: PlanQualityStatusLevel;
+  readonly executableSteps: number;
+  readonly manualSteps: number;
+  readonly unsupportedSteps: number;
+  readonly blockedSteps: number;
+  readonly missingExecutorKeys: number;
+  readonly missingValidationCommands: number;
+  readonly notes: readonly string[];
+}
+
 export type MigrationPlanErrorKind =
   | 'no-scan-report'
   | 'scan-incomplete'

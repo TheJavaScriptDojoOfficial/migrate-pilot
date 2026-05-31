@@ -12,9 +12,13 @@ import type { StatusKind } from '@shared/ui/StatusIndicator';
 
 import type {
   MigrationPlanStatus,
+  MigrationPlanStepV2Capability,
+  MigrationPlanStepV2ExecutionType,
+  MigrationPlanStepV2RollbackStrategy,
   MigrationStepCategory,
   MigrationStepRisk,
   MigrationStepStatus,
+  PlanQualityStatusLevel,
 } from '../types/migrationPlan.types';
 
 /** Human-readable category label shown in chips and step rows. */
@@ -91,4 +95,74 @@ export const STEP_STATUS_TONE: Record<MigrationStepStatus, BadgeTone> = {
   failed: 'danger',
   skipped: 'warning',
   blocked: 'danger',
+};
+
+/**
+ * Plan Step Contract V2 — capability → tone/label.
+ *
+ * The capability chip is the single piece of metadata that tells the
+ * user whether the execution engine can dispatch a step today. Keeping
+ * the tone/label tables here ensures every surface (step card, phase
+ * breakdown, plan-quality card) renders the same colour for the same
+ * capability.
+ */
+export const CAPABILITY_TONE: Record<MigrationPlanStepV2Capability, BadgeTone> = {
+  available: 'success',
+  'not-yet-supported': 'warning',
+  'manual-only': 'info',
+  blocked: 'danger',
+};
+
+export const CAPABILITY_LABEL: Record<MigrationPlanStepV2Capability, string> = {
+  available: 'Executable',
+  'not-yet-supported': 'Not yet supported',
+  'manual-only': 'Manual only',
+  blocked: 'Blocked',
+};
+
+/** Short execution-type label used on the step header chips. */
+export const EXECUTION_TYPE_LABEL: Record<MigrationPlanStepV2ExecutionType, string> = {
+  scripted: 'Scripted',
+  codemod: 'Codemod',
+  'ai-assisted': 'AI-assisted',
+  manual: 'Manual',
+  'validation-only': 'Validation',
+};
+
+/**
+ * Execution-type tone. Validation-only is intentionally neutral — it is
+ * not "available" in the executor sense, so flagging it green next to a
+ * green "Executable" capability would confuse the user.
+ */
+export const EXECUTION_TYPE_TONE: Record<MigrationPlanStepV2ExecutionType, BadgeTone> = {
+  scripted: 'info',
+  codemod: 'accent',
+  'ai-assisted': 'accent',
+  manual: 'warning',
+  'validation-only': 'neutral',
+};
+
+export const ROLLBACK_LABEL: Record<MigrationPlanStepV2RollbackStrategy, string> = {
+  'git-revert': 'Git revert',
+  'discard-worktree-changes': 'Discard worktree changes',
+  manual: 'Manual rollback',
+};
+
+/**
+ * Plan Quality Status (R5 Step 14) → badge tone/label.
+ *
+ * Kept here so the Plan UI and any future surfaces (e.g. workflow
+ * sidebar, execution preflight) render the same colour and label for
+ * the same plan-level health verdict.
+ */
+export const PLAN_QUALITY_STATUS_TONE: Record<PlanQualityStatusLevel, BadgeTone> = {
+  good: 'success',
+  'needs-review': 'warning',
+  blocked: 'danger',
+};
+
+export const PLAN_QUALITY_STATUS_LABEL: Record<PlanQualityStatusLevel, string> = {
+  good: 'Good',
+  'needs-review': 'Needs review',
+  blocked: 'Blocked',
 };

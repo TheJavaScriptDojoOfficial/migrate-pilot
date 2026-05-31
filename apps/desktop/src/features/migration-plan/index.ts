@@ -33,6 +33,18 @@ export {
   countApprovalGates,
   countRequiredSteps,
 } from './services/migrationPlanRiskService';
+export { resolvePlanQualityStatus } from './services/migrationPlanQualityService';
+export {
+  resolvePlanApprovalGate,
+  isWorkspaceCreationPlanStep,
+} from './services/migrationPlanApprovalService';
+export type {
+  PlanApprovalGate,
+  PlanApprovalGateInput,
+  PlanApprovalGateReason,
+  PlanApprovalGateReasonCode,
+  PlanApprovalGenerationGateInput,
+} from './services/migrationPlanApprovalService';
 export type {
   MigrationPlan,
   MigrationPlanError,
@@ -46,6 +58,8 @@ export type {
   MigrationPlanStepV2Risk,
   MigrationPlanStepV2RollbackStrategy,
   MigrationPlanStepV2Status,
+  PlanQualityStatus,
+  PlanQualityStatusLevel,
   React19MigrationPlanV2,
   React19PlanPhaseSummary,
   React19PlanStep,
