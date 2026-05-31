@@ -86,6 +86,20 @@ export interface React19MigrationContextResult {
 }
 
 /**
+ * Subset of {@link React19SupportStatus} fields that describe what the
+ * scanner actually detected in the manifest, regardless of which
+ * blocker (if any) ultimately fires. Computed once at the top of
+ * {@link computeReact19MigrationContext} and merged into every status
+ * branch so the readiness UI can render a consistent "detected" panel.
+ */
+interface DetectedFields {
+  readonly sourceReactVersion?: string;
+  readonly sourceReactMajor?: number;
+  readonly reactDomVersion?: string;
+  readonly reactDomMajor?: number;
+}
+
+/**
  * Compute the React 19 migration context for a single project.
  *
  * Decision order (first match wins, matches `docs/DEV_PLAN_V1.md` §R2):
@@ -119,6 +133,32 @@ export function computeReact19MigrationContext(
 ): React19MigrationContextResult {
   const packageManager = normalisePackageManager(input.packageManager);
 
+  // Parse react / react-dom signals up-front so they can be surfaced in
+  // every status branch below — including blockers that do not depend
+  // on dependency parsing (e.g. `package-manager-not-detected`). This
+  // guarantees the readiness UI renders the same "detected" panel
+  // regardless of which blocker triggered.
+  const hasReactVersion =
+    input.reactVersion !== undefined && input.reactVersion.length > 0;
+  const sourceReactMajor = hasReactVersion
+    ? parseReactMajor(input.reactVersion)
+    : undefined;
+  const hasReactDom =
+    input.reactDomVersion !== undefined && input.reactDomVersion.length > 0;
+  const reactDomMajor = hasReactDom
+    ? parseReactMajor(input.reactDomVersion)
+    : undefined;
+
+  // Detected fields shared by every status branch. Only fields with a
+  // real value are included so callers never see explicit `undefined`s
+  // (matters under exactOptionalPropertyTypes).
+  const detected: DetectedFields = {
+    ...(hasReactVersion ? { sourceReactVersion: input.reactVersion } : {}),
+    ...(sourceReactMajor !== undefined ? { sourceReactMajor } : {}),
+    ...(hasReactDom ? { reactDomVersion: input.reactDomVersion } : {}),
+    ...(reactDomMajor !== undefined ? { reactDomMajor } : {}),
+  };
+
   // 1. package.json missing
   if (!input.packageJsonPresent) {
     return {
@@ -130,6 +170,7 @@ export function computeReact19MigrationContext(
           'React 19 migration planning is blocked because package.json was not found.',
         canGeneratePlan: false,
         packageManager,
+        ...detected,
       }),
     };
   }
@@ -145,12 +186,13 @@ export function computeReact19MigrationContext(
           'React 19 migration planning is blocked because no supported package manager lockfile was detected.',
         canGeneratePlan: false,
         packageManager,
+        ...detected,
       }),
     };
   }
 
   // 3. React not declared
-  if (input.reactVersion === undefined || input.reactVersion.length === 0) {
+  if (!hasReactVersion) {
     return {
       status: buildStatus({
         isSupported: false,
@@ -160,16 +202,10 @@ export function computeReact19MigrationContext(
           'React 19 migration planning is blocked because this project does not declare a React dependency.',
         canGeneratePlan: false,
         packageManager,
+        ...detected,
       }),
     };
   }
-
-  const sourceReactMajor = parseReactMajor(input.reactVersion);
-  const hasReactDom =
-    input.reactDomVersion !== undefined && input.reactDomVersion.length > 0;
-  const reactDomMajor = hasReactDom
-    ? parseReactMajor(input.reactDomVersion)
-    : undefined;
 
   // 4. React version cannot be parsed
   if (sourceReactMajor === undefined) {

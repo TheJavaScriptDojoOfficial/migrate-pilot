@@ -300,7 +300,7 @@ function buildDependencyReport(
   pkg: ParsedPackageJson | undefined,
 ): DependencyReport {
   const lockFiles = collectLockFiles(raw.lockFiles);
-  const packageManager = inferPackageManager(raw.lockFiles);
+  const packageManager = inferPackageManager(raw.lockFiles, pkg !== undefined);
 
   const reactVersion = readVersion(pkg, 'react');
   const reactDomVersion = readVersion(pkg, 'react-dom');
@@ -383,11 +383,20 @@ function optionalEntry<K extends string, V>(
 
 function inferPackageManager(
   lockFiles: ProjectScanRaw['lockFiles'],
+  packageJsonPresent: boolean,
 ): PackageManager {
   if (lockFiles.npm) return 'npm';
   if (lockFiles.yarn) return 'yarn';
   if (lockFiles.pnpm) return 'pnpm';
   if (lockFiles.bun) return 'bun';
+  // No lockfile committed but `package.json` exists — common for
+  // freshly-cloned projects. Default to `npm` (the universal default
+  // shipped with Node) so the React 19 eligibility check is not blocked
+  // purely on a missing lockfile. The compatibility scanner still
+  // surfaces a non-blocking `no-lockfile-found` issue separately, and
+  // the migration preflight is responsible for running `npm install`
+  // before any plan step executes.
+  if (packageJsonPresent) return 'npm';
   return 'unknown';
 }
 
