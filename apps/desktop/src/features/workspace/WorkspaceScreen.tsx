@@ -19,6 +19,10 @@ import {
   selectPlan,
   useMigrationPlanStore,
 } from '@features/migration-plan';
+import {
+  selectScanReport,
+  useProjectScannerStore,
+} from '@features/scanner';
 
 import { WorkspaceActionBar } from './components/WorkspaceActionBar';
 import { WorkspaceBlockedState } from './components/WorkspaceBlockedState';
@@ -31,6 +35,7 @@ import {
   selectWorkspaceError,
   selectWorkspacePreflight,
   selectWorkspaceResult,
+  selectWorkspaceState,
   selectWorkspaceStatus,
   useWorkspaceSetupStore,
 } from './hooks/useWorkspaceSetup';
@@ -38,7 +43,11 @@ import {
   STATUS_KIND,
   STATUS_LABEL,
 } from './services/workspacePresentationService';
-import type { WorkspaceStatus } from './types/workspace.types';
+import type {
+  WorkspaceGitStatus,
+  WorkspacePackageManager,
+  WorkspaceStatus,
+} from './types/workspace.types';
 
 /**
  * Step 5 — Migration Workspace Creation (Milestone 5).
@@ -63,6 +72,7 @@ export function WorkspaceScreen(): JSX.Element {
   const navigate = useNavigate();
 
   const project = useSessionStore((s) => s.project);
+  const scanReport = useProjectScannerStore(selectScanReport);
 
   const plan = useMigrationPlanStore(selectPlan);
   const isPlanApproved = useMigrationPlanStore(selectIsPlanApproved);
@@ -70,6 +80,7 @@ export function WorkspaceScreen(): JSX.Element {
   const status = useWorkspaceSetupStore(selectWorkspaceStatus);
   const preflight = useWorkspaceSetupStore(selectWorkspacePreflight);
   const result = useWorkspaceSetupStore(selectWorkspaceResult);
+  const workspaceState = useWorkspaceSetupStore(selectWorkspaceState);
   const error = useWorkspaceSetupStore(selectWorkspaceError);
   const runPreflight = useWorkspaceSetupStore((s) => s.runPreflight);
   const createWorkspace = useWorkspaceSetupStore((s) => s.createWorkspace);
@@ -164,12 +175,18 @@ export function WorkspaceScreen(): JSX.Element {
               });
             }}
             onCreate={() => {
-              if (preflight === undefined) return;
+              if (preflight === undefined || plan === undefined) return;
+              const gitStatus = deriveBaselineGitStatus(preflight);
+              const packageManager = deriveWorkspacePackageManager(scanReport);
               void createWorkspace({
                 sourcePath: preflight.sourcePath,
                 workspacePath: preflight.proposedWorkspacePath,
                 branchName: preflight.proposedBranchName,
                 strategy: preflight.recommendedStrategy,
+                planId: plan.id,
+                planSnapshot: plan,
+                gitStatus,
+                ...(packageManager !== undefined ? { packageManager } : {}),
               });
             }}
             onReset={resetWorkspace}
@@ -234,8 +251,11 @@ export function WorkspaceScreen(): JSX.Element {
                     warnings={preflight.warnings}
                   />
                 </>
-              ) : status === 'created' && result !== undefined ? (
-                <WorkspaceCreatedCard result={result} />
+              ) : status === 'created' && workspaceState !== undefined ? (
+                <WorkspaceCreatedCard
+                  workspace={workspaceState}
+                  {...(result !== undefined ? { result } : {})}
+                />
               ) : null}
             </>
           )}
@@ -389,8 +409,9 @@ function CreatingState(): JSX.Element {
           <CardDescription>
             Running{' '}
             <code className="font-mono text-[11px]">git worktree add</code>{' '}
-            with the confirmed parameters. Output is captured for the audit
-            trail.
+            with the confirmed parameters. The original project stays
+            read-only — workspace creation never installs packages or
+            commits anything.
           </CardDescription>
         </div>
         <StatusIndicator status="running" label="Creating" variant="chip" />
@@ -398,20 +419,32 @@ function CreatingState(): JSX.Element {
       <ul className="divide-y divide-canvas-border">
         <PhaseRow
           index={1}
-          title="Re-verify Git invariants"
+          title="Re-verify Git status"
           hint="rev-parse, status, branch --list"
           status="success"
         />
         <PhaseRow
           index={2}
-          title="Create migration branch + worktree"
+          title="Prepare migration branch"
+          hint="Resolved branch name + safety checks"
+          status="success"
+        />
+        <PhaseRow
+          index={3}
+          title="Create worktree"
           hint="git worktree add -b <branch> <workspace>"
           status="running"
         />
         <PhaseRow
-          index={3}
-          title="Capture command output"
-          hint="stdout/stderr persisted to the result"
+          index={4}
+          title="Save workspace metadata"
+          hint=".migration-orchestrator/session/workspace.json"
+          status="pending"
+        />
+        <PhaseRow
+          index={5}
+          title="Save plan snapshot"
+          hint=".migration-orchestrator/session/plan-snapshot.json"
           status="pending"
         />
       </ul>
@@ -490,4 +523,49 @@ function Bullet({ children }: { readonly children: React.ReactNode }): JSX.Eleme
       <span>{children}</span>
     </li>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* derive helpers                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Phase R5 — derive the {@link WorkspaceGitStatus} baseline from the
+ * preflight payload. The Tauri side already verified the working tree
+ * is clean before allowing creation, so the snapshot represents the
+ * starting state of the source repo when the worktree is forked.
+ */
+function deriveBaselineGitStatus(
+  preflight: NonNullable<ReturnType<typeof selectWorkspacePreflight>>,
+): WorkspaceGitStatus {
+  const { isGitRepository, gitCleanliness, currentBranch } = preflight;
+  const summary =
+    gitCleanliness === 'clean'
+      ? 'Source working tree was clean at workspace creation time.'
+      : gitCleanliness === 'dirty'
+        ? 'Source working tree had uncommitted changes — workspace was created from the last committed state.'
+        : 'Source cleanliness could not be determined; verify before mutating.';
+  return {
+    isGitRepository,
+    isClean: gitCleanliness === 'clean',
+    ...(currentBranch !== undefined ? { currentBranch } : {}),
+    summary,
+  };
+}
+
+/**
+ * Phase R5 — narrow the scanner-level `PackageManager` (which includes
+ * `bun`) to the {@link WorkspacePackageManager} union the workspace
+ * tracks. `bun` is folded into `unknown` because the workspace step
+ * does not target Bun-specific behavior in V1.
+ */
+function deriveWorkspacePackageManager(
+  scanReport:
+    | ReturnType<typeof useProjectScannerStore.getState>['report']
+    | undefined,
+): WorkspacePackageManager | undefined {
+  const value = scanReport?.dependencies?.packageManager;
+  if (value === undefined) return undefined;
+  if (value === 'npm' || value === 'yarn' || value === 'pnpm') return value;
+  return 'unknown';
 }

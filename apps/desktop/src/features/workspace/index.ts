@@ -9,26 +9,41 @@ export { WorkspaceScreen } from './WorkspaceScreen';
 export {
   useWorkspaceSetupStore,
   selectHasWorkspace,
+  selectHasValidWorkspace,
   selectWorkspaceError,
+  selectWorkspacePath,
+  selectWorkspacePlanSnapshot,
   selectWorkspacePreflight,
   selectWorkspaceResult,
+  selectWorkspaceState,
   selectWorkspaceStatus,
 } from './hooks/useWorkspaceSetup';
 export {
   isValidBranchName,
   sanitiseForBranch,
 } from './services/workspacePathService';
+export {
+  isValidWorkspaceState,
+  validateWorkspaceState,
+} from './services/workspaceValidationService';
 export type {
+  CreateWorkspaceRequest,
+  CreateWorkspaceResult,
   GitCleanliness,
   WorkspaceCommandLog,
   WorkspaceCreationResult,
   WorkspaceError,
   WorkspaceErrorKind,
+  WorkspaceGitStatus,
   WorkspaceIssue,
   WorkspaceIssueCode,
   WorkspaceIssueSeverity,
+  WorkspacePackageManager,
+  WorkspacePlanSnapshot,
   WorkspacePreflight,
   WorkspaceSetupState,
+  WorkspaceState,
+  WorkspaceStateValidation,
   WorkspaceStatus,
   WorkspaceStrategy,
 } from './types/workspace.types';

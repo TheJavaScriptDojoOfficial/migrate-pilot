@@ -16,10 +16,13 @@ import {
   selectPlan,
   useMigrationPlanStore,
 } from '@features/migration-plan';
+import { isWorkspaceCreationPlanStep } from '@features/migration-plan';
 import {
   selectHasWorkspace,
-  selectWorkspaceResult,
+  selectWorkspacePlanSnapshot,
+  selectWorkspaceState,
   useWorkspaceSetupStore,
+  validateWorkspaceState,
 } from '@features/workspace';
 
 import { ExecutionActionBar } from './components/ExecutionActionBar';
@@ -72,7 +75,8 @@ export function ExecutionScreen(): JSX.Element {
 
   const plan = useMigrationPlanStore(selectPlan);
   const isPlanApproved = useMigrationPlanStore(selectIsPlanApproved);
-  const workspaceResult = useWorkspaceSetupStore(selectWorkspaceResult);
+  const workspaceState = useWorkspaceSetupStore(selectWorkspaceState);
+  const planSnapshot = useWorkspaceSetupStore(selectWorkspacePlanSnapshot);
   const hasWorkspace = useWorkspaceSetupStore(selectHasWorkspace);
 
   const status = useExecutionEngineStore(selectExecutionStatus);
@@ -94,24 +98,50 @@ export function ExecutionScreen(): JSX.Element {
     (s) => s.clearIfPlanOrWorkspaceChanges,
   );
 
+  // Phase R5 — Step 11/13: filter out any legacy "create workspace"
+  // plan steps so the execution screen never offers them as runnable.
+  // The current planner does not emit them, but old persisted plans
+  // can still surface one and the workspace step itself is not part
+  // of the execution contract.
+  const executablePlanSteps = useMemo(() => {
+    if (plan === undefined) return [];
+    return plan.steps.filter((step) => !isWorkspaceCreationPlanStep(step));
+  }, [plan]);
+
+  // Phase R5 — Step 13/14: state-level workspace validation.
+  // Even when `hasWorkspace` is true the persisted state may be
+  // invalid (e.g. plan id no longer matches the active plan). The
+  // validator runs synchronously off the persisted store; an async
+  // filesystem probe could be added later without changing this
+  // contract.
+  const workspaceValidation = useMemo(
+    () => validateWorkspaceState(workspaceState, plan?.id),
+    [workspaceState, plan?.id],
+  );
+  const hasValidWorkspace =
+    hasWorkspace && workspaceState !== undefined && workspaceValidation.valid;
+
   // Cross-store invariant: the engine is bound to (planId, workspacePath).
   // When either changes upstream we wipe the engine state so the user is
   // forced to re-verify capability before re-running.
   useEffect(() => {
-    if (!isPlanApproved || plan === undefined || !hasWorkspace || workspaceResult === undefined) {
+    if (
+      !isPlanApproved ||
+      plan === undefined ||
+      !hasValidWorkspace ||
+      workspaceState === undefined
+    ) {
       clearIfPlanOrWorkspaceChanges(undefined, undefined);
       markBlocked();
       return;
     }
-    clearIfPlanOrWorkspaceChanges(plan.id, workspaceResult.workspacePath);
+    clearIfPlanOrWorkspaceChanges(plan.id, workspaceState.workspacePath);
     initializeFromPlanAndWorkspace({
       planId: plan.id,
-      workspacePath: workspaceResult.workspacePath,
-      sourcePath: workspaceResult.sourcePath,
-      ...(workspaceResult.branchName !== undefined
-        ? { branchName: workspaceResult.branchName }
-        : {}),
-      planSteps: plan.steps.map((s) => ({
+      workspacePath: workspaceState.workspacePath,
+      sourcePath: workspaceState.originalProjectPath,
+      branchName: workspaceState.branchName,
+      planSteps: executablePlanSteps.map((s) => ({
         id: s.id,
         title: s.title,
         ...(s.execution !== undefined ? { execution: s.execution } : {}),
@@ -120,24 +150,28 @@ export function ExecutionScreen(): JSX.Element {
   }, [
     isPlanApproved,
     plan,
-    hasWorkspace,
-    workspaceResult,
+    hasValidWorkspace,
+    workspaceState,
+    executablePlanSteps,
     clearIfPlanOrWorkspaceChanges,
     initializeFromPlanAndWorkspace,
     markBlocked,
   ]);
 
   const isTauri = runtimeConfig.isTauri;
-  const blockedReason: 'no-plan' | 'no-workspace' | undefined = !isPlanApproved
-    ? 'no-plan'
-    : !hasWorkspace
-      ? 'no-workspace'
-      : undefined;
+  const blockedReason: 'no-plan' | 'no-workspace' | 'invalid-workspace' | undefined =
+    !isPlanApproved
+      ? 'no-plan'
+      : !hasWorkspace
+        ? 'no-workspace'
+        : !hasValidWorkspace
+          ? 'invalid-workspace'
+          : undefined;
 
   const selectedPlanStep = useMemo(() => {
-    if (plan === undefined || selectedStepId === undefined) return undefined;
-    return plan.steps.find((s) => s.id === selectedStepId);
-  }, [plan, selectedStepId]);
+    if (selectedStepId === undefined) return undefined;
+    return executablePlanSteps.find((s) => s.id === selectedStepId);
+  }, [executablePlanSteps, selectedStepId]);
 
   const selectedCapability = useExecutionEngineStore((s) =>
     selectCapabilityFor(s, selectedStepId),
@@ -230,21 +264,28 @@ export function ExecutionScreen(): JSX.Element {
           {blockedReason !== undefined ? (
             <ExecutionBlockedState
               reason={blockedReason}
+              {...(blockedReason === 'invalid-workspace'
+                ? { invalidReasons: workspaceValidation.reasons }
+                : {})}
               onGoToPlan={() => navigate(ROUTES.migrationPlan)}
               onGoToWorkspace={() => navigate(ROUTES.workspace)}
             />
           ) : !isTauri ? (
             <WebPreviewNotice />
-          ) : workspaceResult === undefined || plan === undefined ? null : (
+          ) : workspaceState === undefined || plan === undefined ? null : (
             <>
               <ExecutionWorkspaceCard
-                workspacePath={workspaceResult.workspacePath}
-                sourcePath={workspaceResult.sourcePath}
-                {...(workspaceResult.branchName !== undefined
-                  ? { branchName: workspaceResult.branchName }
+                workspacePath={workspaceState.workspacePath}
+                sourcePath={workspaceState.originalProjectPath}
+                branchName={workspaceState.branchName}
+                strategy={workspaceState.strategy}
+                planId={workspaceState.planId}
+                planTitle={planSnapshot?.title ?? plan.title}
+                planTotalSteps={executablePlanSteps.length}
+                track={planSnapshot?.track ?? plan.track}
+                {...(workspaceState.packageManager !== undefined
+                  ? { packageManager: workspaceState.packageManager }
                   : {})}
-                planTitle={plan.title}
-                planTotalSteps={plan.steps.length}
               />
 
               {engineError !== undefined && status !== 'failed' ? (
@@ -259,7 +300,7 @@ export function ExecutionScreen(): JSX.Element {
 
               <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
                 <ExecutionPlanStepList
-                  steps={plan.steps}
+                  steps={executablePlanSteps}
                   capabilities={capabilities}
                   stepStatuses={stepStatuses}
                   selectedPlanStepId={selectedStepId}
@@ -347,7 +388,7 @@ function HeaderMeta({
 }: {
   readonly status: ExecutionStatus;
   readonly isTauri: boolean;
-  readonly blockedReason: 'no-plan' | 'no-workspace' | undefined;
+  readonly blockedReason: 'no-plan' | 'no-workspace' | 'invalid-workspace' | undefined;
 }): JSX.Element {
   return (
     <>
@@ -372,6 +413,10 @@ function HeaderMeta({
       ) : blockedReason === 'no-workspace' ? (
         <Badge tone="warning" variant="soft" withDot>
           Workspace required
+        </Badge>
+      ) : blockedReason === 'invalid-workspace' ? (
+        <Badge tone="danger" variant="soft" withDot>
+          Workspace invalid
         </Badge>
       ) : null}
       {!isTauri ? (

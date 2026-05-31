@@ -39,6 +39,7 @@ pub fn run() {
             commands::scan::scan_get_report,
             commands::workspace::workspace_preflight,
             commands::workspace::workspace_create,
+            commands::workspace::workspace_write_session_artifact,
             commands::execution::execution_check_capability,
             commands::execution::execution_run_step,
             commands::diff::diff_load,

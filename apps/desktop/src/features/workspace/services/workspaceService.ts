@@ -15,6 +15,7 @@
  */
 import {
   invokeCommand,
+  type WorkspaceArtifactWriteResultRaw,
   type WorkspaceCommandLogRaw,
   type WorkspaceCreationResultRaw,
   type WorkspaceIssueRaw,
@@ -29,7 +30,9 @@ import type {
   WorkspaceIssue,
   WorkspaceIssueCode,
   WorkspaceIssueSeverity,
+  WorkspacePlanSnapshot,
   WorkspacePreflight,
+  WorkspaceState,
   WorkspaceStrategy,
 } from '../types/workspace.types';
 
@@ -234,5 +237,68 @@ function parseCommandLog(raw: WorkspaceCommandLogRaw): WorkspaceCommandLog {
     ...(typeof raw.stderr === 'string' && raw.stderr.length > 0
       ? { stderr: raw.stderr }
       : {}),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Phase R5 — Session artifact write                                          */
+/* -------------------------------------------------------------------------- */
+
+export interface WriteWorkspaceSessionArtifactsInput {
+  readonly workspace: WorkspaceState;
+  readonly planSnapshot: WorkspacePlanSnapshot;
+}
+
+export interface WriteWorkspaceSessionArtifactsResult {
+  readonly workspacePath: string;
+  readonly artifacts: readonly {
+    readonly relativePath: string;
+    readonly absolutePath: string;
+    readonly bytesWritten: number;
+  }[];
+}
+
+/**
+ * Persist the workspace metadata + plan snapshot to disk as JSON
+ * inside `<workspacePath>/.migration-orchestrator/session/`.
+ *
+ * The Rust bridge enforces the path allowlist; this helper exists so
+ * the workspace store can fail soft (return the error rather than
+ * throw) when the artifact write is best-effort.
+ */
+export async function writeWorkspaceSessionArtifacts(
+  input: WriteWorkspaceSessionArtifactsInput,
+): Promise<WriteWorkspaceSessionArtifactsResult> {
+  if (!runtimeConfig.isTauri) {
+    throw new WorkspaceServiceError(
+      'tauri-unavailable',
+      'Session artifact persistence requires the Migrate Pilot desktop shell.',
+    );
+  }
+
+  const workspaceJson = JSON.stringify(input.workspace, null, 2);
+  const planSnapshotJson = JSON.stringify(input.planSnapshot, null, 2);
+
+  let raw: WorkspaceArtifactWriteResultRaw;
+  try {
+    raw = await invokeCommand('workspace_write_session_artifact', {
+      workspacePath: input.workspace.workspacePath,
+      artifacts: [
+        { name: 'workspace.json', contents: workspaceJson },
+        { name: 'plan-snapshot.json', contents: planSnapshotJson },
+      ],
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new WorkspaceServiceError('creation-failed', message);
+  }
+
+  return {
+    workspacePath: raw.workspacePath,
+    artifacts: raw.artifacts.map((entry) => ({
+      relativePath: entry.relativePath,
+      absolutePath: entry.absolutePath,
+      bytesWritten: entry.bytesWritten,
+    })),
   };
 }

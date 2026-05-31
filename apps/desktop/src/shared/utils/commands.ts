@@ -193,6 +193,34 @@ export interface WorkspaceCreationResultRaw {
 }
 
 /**
+ * Phase R5 — Session artifact write (workspace.json + plan-snapshot.json).
+ *
+ * Mirrors `WorkspaceArtifactWriteResultRaw` in
+ * `src-tauri/src/commands/workspace.rs`. The bridge accepts an
+ * allowlist of artifact names and never writes outside the workspace.
+ */
+export interface WorkspaceArtifactEntryRaw {
+  readonly relativePath: string;
+  readonly absolutePath: string;
+  readonly bytesWritten: number;
+}
+
+export interface WorkspaceArtifactWriteResultRaw {
+  readonly workspacePath: string;
+  readonly artifacts: readonly WorkspaceArtifactEntryRaw[];
+}
+
+/** Allowed names for {@link CommandPayloads.workspace_write_session_artifact}. */
+export type WorkspaceSessionArtifactName =
+  | 'workspace.json'
+  | 'plan-snapshot.json';
+
+export interface WorkspaceSessionArtifactInputRaw {
+  readonly name: WorkspaceSessionArtifactName;
+  readonly contents: string;
+}
+
+/**
  * Raw payloads returned by the Milestone 6 execution commands.
  *
  * Mirrors the Rust types in `src-tauri/src/commands/execution.rs`. The UI
@@ -354,6 +382,13 @@ export interface CommandPayloads {
       strategy: 'git-worktree' | 'copy';
     };
     output: WorkspaceCreationResultRaw;
+  };
+  workspace_write_session_artifact: {
+    input: {
+      workspacePath: string;
+      artifacts: readonly WorkspaceSessionArtifactInputRaw[];
+    };
+    output: WorkspaceArtifactWriteResultRaw;
   };
   execution_check_capability: {
     input: {

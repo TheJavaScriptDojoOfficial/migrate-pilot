@@ -17,6 +17,7 @@
  *   {@link WorkspaceStatus} and the exhaustive switch in
  *   `workspacePresentationService` will force every callsite to update.
  */
+import type { React19MigrationPlanV2 } from '@features/migration-plan';
 
 /* -------------------------------------------------------------------------- */
 /* State machine                                                              */
@@ -132,6 +133,134 @@ export interface WorkspaceCreationResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Phase R5 — Persisted workspace metadata                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Coarse package-manager identification carried with the persisted
+ * workspace state. Mirrors the planner-facing union but normalises the
+ * scanner's `bun` value to `unknown` since the workspace step only
+ * cares about the dominant Node-ecosystem package managers.
+ */
+export type WorkspacePackageManager = 'npm' | 'yarn' | 'pnpm' | 'unknown';
+
+/**
+ * Baseline Git status snapshot captured at the moment the workspace is
+ * created. Persisted verbatim so the execution screen can show the
+ * starting commit/branch + dirty-file list without re-running a Git
+ * inspection (the Tauri `workspace_create` flow already verified the
+ * working tree was clean before the worktree was created).
+ */
+export interface WorkspaceGitStatus {
+  readonly isGitRepository: boolean;
+  readonly isClean: boolean;
+  readonly currentBranch?: string;
+  readonly changedFiles?: readonly string[];
+  readonly summary?: string;
+}
+
+/**
+ * Phase R5 canonical workspace metadata.
+ *
+ * `WorkspaceState` is the persisted post-creation contract that the
+ * execution screen, diff review, and any future orchestrator stages
+ * consume. It deliberately keeps a flat shape so it can be serialised
+ * to `localStorage` and to the on-disk session artifact under
+ * `.migration-orchestrator/session/workspace.json` without
+ * normalisation.
+ *
+ * Field semantics:
+ *   - `originalProjectPath` — the immutable read-only source path. The
+ *     workspace step is the only place we ever record it; downstream
+ *     features must use `workspacePath` for any mutation.
+ *   - `workspacePath` — the migration workspace root. Always created
+ *     outside `originalProjectPath`.
+ *   - `branchName` — non-empty for `git-worktree`. The copy fallback
+ *     also stores a branch-shaped label (without ever creating a
+ *     branch) so the UI can render a stable identifier for the
+ *     workspace.
+ *   - `gitStatus` — snapshot at workspace-creation time only. Not
+ *     refreshed automatically.
+ *   - `planId` — id of the approved plan the workspace was bound to.
+ *     `clearIfPlanChanges` invalidates the workspace when this id no
+ *     longer matches the active plan.
+ */
+export interface WorkspaceState {
+  readonly originalProjectPath: string;
+  readonly workspacePath: string;
+  readonly branchName: string;
+  readonly strategy: WorkspaceStrategy;
+  readonly createdAt: string;
+  readonly gitStatus: WorkspaceGitStatus;
+  readonly packageManager?: WorkspacePackageManager;
+  readonly planId: string;
+}
+
+/**
+ * Request payload sent into the workspace creation pipeline (Phase R5).
+ *
+ * Built by the workspace screen from the approved plan + selected
+ * project + scanner-derived package manager. The store/service layer
+ * is the only consumer — it merges the request with the preflight
+ * output (proposed branch + path + strategy) and dispatches the Tauri
+ * `workspace_create` command.
+ */
+export interface CreateWorkspaceRequest {
+  readonly originalProjectPath: string;
+  readonly planId: string;
+  readonly planSnapshot: React19MigrationPlanV2;
+  readonly packageManager?: WorkspacePackageManager;
+  readonly preferredStrategy?: WorkspaceStrategy;
+}
+
+/**
+ * Result envelope produced by the workspace creation pipeline.
+ *
+ * `success: true` means a `WorkspaceState` was persisted and the
+ * execution screen can advance. `success: false` carries an `error`
+ * string the UI renders verbatim. `warnings` lists non-fatal advisories
+ * (e.g. fallback strategy selected, missing package manager).
+ */
+export interface CreateWorkspaceResult {
+  readonly success: boolean;
+  readonly workspace?: WorkspaceState;
+  readonly error?: string;
+  readonly warnings?: readonly string[];
+}
+
+/**
+ * Plan snapshot persisted alongside `WorkspaceState`.
+ *
+ * Captures only the fields the workspace/execution layer needs from
+ * the approved plan so that downstream consumers can keep working even
+ * if the upstream `MigrationPlan` schema evolves.
+ */
+export interface WorkspacePlanSnapshot {
+  readonly planId: string;
+  readonly planVersion: string;
+  readonly track: React19MigrationPlanV2['track'];
+  readonly title: string;
+  readonly summaryText: string;
+  readonly sourceReactVersion: string;
+  readonly targetReactVersion: '19';
+  readonly approvedAt?: string;
+  readonly steps: React19MigrationPlanV2['steps'];
+  readonly workspacePath: string;
+  readonly branchName: string;
+  readonly strategy: WorkspaceStrategy;
+  readonly createdAt: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Validation                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface WorkspaceStateValidation {
+  readonly valid: boolean;
+  readonly reasons: readonly string[];
+}
+
+/* -------------------------------------------------------------------------- */
 /* Errors                                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -157,6 +286,8 @@ export interface WorkspaceSetupState {
   readonly status: WorkspaceStatus;
   readonly preflight?: WorkspacePreflight;
   readonly result?: WorkspaceCreationResult;
+  readonly workspace?: WorkspaceState;
+  readonly planSnapshot?: WorkspacePlanSnapshot;
   readonly error?: WorkspaceError;
   /**
    * The plan id the preflight + result snapshot were captured against.

@@ -94,6 +94,21 @@ pub struct WorkspaceCreationResultRaw {
     pub command_logs: Vec<WorkspaceCommandLogRaw>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceArtifactWriteResultRaw {
+    pub workspace_path: String,
+    pub artifacts: Vec<WorkspaceArtifactEntryRaw>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceArtifactEntryRaw {
+    pub relative_path: String,
+    pub absolute_path: String,
+    pub bytes_written: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -524,6 +539,133 @@ fn validate_workspace_path(input: &str, source: &Path) -> CommandResult<PathBuf>
     Ok(canonical_candidate)
 }
 
+// ---------------------------------------------------------------------------
+// Session artifact writer (Phase R5 — workspace handoff)
+// ---------------------------------------------------------------------------
+
+/// Allowlist of session artifact file names the UI is permitted to write
+/// into a created workspace. Keeps the bridge command honest — it never
+/// accepts a free-form path.
+const SAFE_SESSION_ARTIFACT_NAMES: &[&str] = &[
+    "workspace.json",
+    "plan-snapshot.json",
+];
+
+/// Folder (relative to the workspace root) where session artifacts live.
+const SESSION_ARTIFACT_DIR: &str = ".migration-orchestrator/session";
+
+/// Write small JSON session artifacts inside an existing workspace.
+///
+/// Phase R5 Step 9 requires the workspace screen to persist a plan
+/// snapshot + workspace metadata file alongside the migration worktree.
+/// We expose a tightly-scoped command rather than a generic file writer
+/// so the UI cannot accidentally write outside the workspace path.
+///
+/// Safety guarantees:
+/// * `workspace_path` is canonicalised + must already exist as a dir.
+/// * Each artifact name is checked against
+///   [`SAFE_SESSION_ARTIFACT_NAMES`]; anything else is rejected.
+/// * Artifacts are written under
+///   `<workspace_path>/.migration-orchestrator/session/`. The folder is
+///   created if missing. Existing files are overwritten in place.
+/// * The artifact contents are limited to 1 MiB each; oversized payloads
+///   are rejected so a runaway plan cannot fill the disk.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn workspace_write_session_artifact(
+    workspace_path: String,
+    artifacts: Vec<WorkspaceSessionArtifactInput>,
+) -> CommandResult<WorkspaceArtifactWriteResultRaw> {
+    let workspace = canonicalise_directory(&workspace_path)?;
+    if artifacts.is_empty() {
+        return Err(CommandError::InvalidInput(
+            "no session artifacts supplied".into(),
+        ));
+    }
+    if artifacts.len() > SAFE_SESSION_ARTIFACT_NAMES.len() {
+        return Err(CommandError::InvalidInput(
+            "too many session artifacts in a single call".into(),
+        ));
+    }
+
+    for artifact in &artifacts {
+        validate_artifact_name(&artifact.name)?;
+        if artifact.contents.len() > 1024 * 1024 {
+            return Err(CommandError::InvalidInput(format!(
+                "session artifact {} exceeds 1 MiB cap",
+                artifact.name
+            )));
+        }
+    }
+
+    let workspace_for_task = workspace.clone();
+    let artifacts_for_task = artifacts;
+    let result = tokio::task::spawn_blocking(move || {
+        write_session_artifacts(&workspace_for_task, &artifacts_for_task)
+    })
+    .await
+    .map_err(|e| CommandError::Internal(format!("artifact task failed: {e}")))??;
+
+    Ok(result)
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSessionArtifactInput {
+    pub name: String,
+    pub contents: String,
+}
+
+fn validate_artifact_name(name: &str) -> CommandResult<()> {
+    if !SAFE_SESSION_ARTIFACT_NAMES.contains(&name) {
+        return Err(CommandError::InvalidInput(format!(
+            "artifact name not allowed: {name}"
+        )));
+    }
+    Ok(())
+}
+
+fn write_session_artifacts(
+    workspace: &Path,
+    artifacts: &[WorkspaceSessionArtifactInput],
+) -> CommandResult<WorkspaceArtifactWriteResultRaw> {
+    let session_dir = workspace.join(SESSION_ARTIFACT_DIR);
+    std::fs::create_dir_all(&session_dir).map_err(|e| {
+        CommandError::Internal(format!(
+            "failed to create session artifact dir {session_dir:?}: {e}"
+        ))
+    })?;
+
+    let mut entries: Vec<WorkspaceArtifactEntryRaw> = Vec::new();
+    for artifact in artifacts {
+        let path = session_dir.join(&artifact.name);
+        // Defensive: the artifact name is allowlisted but `Path::join`
+        // could in theory be tricked by a relative escape if the list
+        // grew. Compare canonical parents to be sure.
+        if let Some(parent) = path.parent() {
+            if parent != session_dir.as_path() {
+                return Err(CommandError::PathNotAllowed(format!(
+                    "artifact path escaped session dir: {path:?}"
+                )));
+            }
+        }
+        std::fs::write(&path, artifact.contents.as_bytes()).map_err(|e| {
+            CommandError::Internal(format!(
+                "failed to write session artifact {path:?}: {e}"
+            ))
+        })?;
+        entries.push(WorkspaceArtifactEntryRaw {
+            relative_path: format!("{SESSION_ARTIFACT_DIR}/{}", artifact.name),
+            absolute_path: path.to_string_lossy().to_string(),
+            bytes_written: artifact.contents.len() as u64,
+        });
+    }
+
+    Ok(WorkspaceArtifactWriteResultRaw {
+        workspace_path: workspace.to_string_lossy().to_string(),
+        artifacts: entries,
+    })
+}
+
 fn path_starts_with(candidate: &Path, root: &Path) -> bool {
     candidate.starts_with(root)
 }
@@ -736,6 +878,22 @@ fn short_random_suffix() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn make_temp_workspace(label: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!(
+            "migrate-pilot-workspace-{label}-{pid}-{n}-{ts}",
+            ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        std::fs::canonicalize(&dir).expect("canonicalize temp dir")
+    }
 
     #[test]
     fn branch_name_validates_safe_inputs() {
@@ -766,5 +924,42 @@ mod tests {
     fn iso_timestamp_round_trips_known_values() {
         assert_eq!(format_unix_seconds_utc(0), "1970-01-01T00:00:00Z");
         assert_eq!(format_unix_seconds_utc(1_700_000_000), "2023-11-14T22:13:20Z");
+    }
+
+    #[test]
+    fn artifact_name_validator_allows_known_files() {
+        assert!(validate_artifact_name("workspace.json").is_ok());
+        assert!(validate_artifact_name("plan-snapshot.json").is_ok());
+    }
+
+    #[test]
+    fn artifact_name_validator_rejects_unknown_files() {
+        assert!(validate_artifact_name("").is_err());
+        assert!(validate_artifact_name("../escape.json").is_err());
+        assert!(validate_artifact_name("execute.sh").is_err());
+        assert!(validate_artifact_name("Workspace.json").is_err());
+    }
+
+    #[test]
+    fn write_session_artifacts_persists_files_inside_workspace() {
+        let temp = make_temp_workspace("artifacts");
+        let inputs = vec![
+            WorkspaceSessionArtifactInput {
+                name: "workspace.json".into(),
+                contents: "{\"workspacePath\":\"x\"}".into(),
+            },
+            WorkspaceSessionArtifactInput {
+                name: "plan-snapshot.json".into(),
+                contents: "{\"planId\":\"y\"}".into(),
+            },
+        ];
+
+        let result = write_session_artifacts(&temp, &inputs).expect("write ok");
+        assert_eq!(result.artifacts.len(), 2);
+
+        let session_dir = temp.join(SESSION_ARTIFACT_DIR);
+        assert!(session_dir.exists());
+        assert!(session_dir.join("workspace.json").exists());
+        assert!(session_dir.join("plan-snapshot.json").exists());
     }
 }
