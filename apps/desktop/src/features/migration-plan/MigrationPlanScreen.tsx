@@ -190,6 +190,7 @@ export function MigrationPlanScreen(): JSX.Element {
                 planStatus={planStatus}
                 executableStepCount={executableSteps.length}
               />
+              <WorkspacePrerequisiteCallout />
               <PlanSummaryCard plan={plan} />
               <PhaseBreakdownCard plan={plan} />
               <PlanStepsCard plan={plan} />
@@ -540,26 +541,45 @@ function PlanStepsCard({
               <p className="mt-1 text-2xs text-ink-subtle">
                 Executor: {step.executorKey ?? 'manual-only (no executor)'}
               </p>
+              <p className="mt-1 text-2xs text-ink-subtle">
+                Phase order: #{String(step.canonicalPhaseOrder + 1).padStart(2, '0')} —
+                {' '}
+                {getReactMigrationPhaseLabel(step.phase)}
+              </p>
               {step.capability !== 'available' ? (
                 <p className="mt-1 text-2xs text-ink-subtle">
                   Auto-run blocked: {step.blockedReason}
                 </p>
               ) : null}
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {(step.expectedCommands ?? []).map((command) => (
-                  <Badge key={`expected:${step.id}:${command}`} tone="neutral" variant="soft" className="font-mono">
-                    expected: {command}
-                  </Badge>
-                ))}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {(step.validationCommands ?? []).map((command) => (
-                  <Badge key={`validation:${step.id}:${command}`} tone="info" variant="soft" className="font-mono">
-                    validate: {command}
-                  </Badge>
-                ))}
-              </div>
-              {step.expectedChangedFiles !== undefined && step.expectedChangedFiles.length > 0 ? (
+              {step.expectedCommands.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {step.expectedCommands.map((command) => (
+                    <Badge
+                      key={`expected:${step.id}:${command}`}
+                      tone="neutral"
+                      variant="soft"
+                      className="font-mono"
+                    >
+                      expected: {command}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              {step.validationCommands.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {step.validationCommands.map((command) => (
+                    <Badge
+                      key={`validation:${step.id}:${command}`}
+                      tone="info"
+                      variant="soft"
+                      className="font-mono"
+                    >
+                      validate: {command}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
+              {step.expectedChangedFiles.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {step.expectedChangedFiles.map((file) => (
                     <Badge
@@ -577,7 +597,7 @@ function PlanStepsCard({
                 Issue codes: {step.issueCodes.join(', ') || 'none'}
               </div>
               <div className="mt-1 text-2xs text-ink-subtle">
-                Change scope: {(step.expectedChangeScope ?? []).join(' · ') || 'n/a'}
+                Change scope: {step.expectedChangeScope.join(' · ') || 'n/a'}
               </div>
             </li>
           ))}
@@ -667,4 +687,54 @@ function riskTone(risk: 'high' | 'medium' | 'low'): BadgeTone {
   if (risk === 'high') return 'danger';
   if (risk === 'medium') return 'warning';
   return 'success';
+}
+
+/**
+ * R5 Step 12 — Workspace creation must NOT be a plan step.
+ *
+ * The migration workspace is owned by Step 05 of the workflow, not by
+ * the plan executor. The planner deliberately omits any "Create safe
+ * migration workspace" plan step; this callout surfaces the
+ * prerequisite to the user so they understand approval routes them to
+ * Step 05 before any execution can happen.
+ */
+function WorkspacePrerequisiteCallout(): JSX.Element {
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Workspace prerequisite</CardTitle>
+          <CardDescription>
+            Plan execution runs against a Git worktree workspace, not your
+            source project. Create and confirm a migration workspace in
+            Step 05 before executing any plan step.
+          </CardDescription>
+        </div>
+        <Badge tone="info" variant="soft" withDot uppercase>
+          Step 05 owns workspace
+        </Badge>
+      </CardHeader>
+      <CardSection>
+        <ul className="grid gap-2 text-xs text-ink-muted sm:grid-cols-2">
+          <li>
+            Plan steps never include a "Create safe migration workspace"
+            executable step — workspace setup is handled by the workspace
+            screen.
+          </li>
+          <li>
+            Approving the plan unlocks Step 05 Workspace, then Step 06
+            Execute. Plan approval does not start execution.
+          </li>
+          <li>
+            Every executable step declares "Workspace required" so the
+            execution engine refuses to run before the workspace exists.
+          </li>
+          <li>
+            Validation-only and manual review steps still expect the
+            workspace to be present so commands run from a known state.
+          </li>
+        </ul>
+      </CardSection>
+    </Card>
+  );
 }

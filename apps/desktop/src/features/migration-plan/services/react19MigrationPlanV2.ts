@@ -3,7 +3,6 @@ import {
   REACT_19_CANONICAL_PHASE_ORDER,
   buildReact19ReadinessReportViewModel,
   buildReact19RiskEngine,
-  getReactMigrationPhaseOrder,
   mapRiskEnginePhaseToReactMigrationPhase,
   resolveReact19PlanGenerationGate,
   type React19MigrationRiskLevel,
@@ -17,7 +16,6 @@ import {
 import type {
   MigrationPlan,
   MigrationPlanStepV2,
-  MigrationPlanStepV2Capability,
   MigrationPlanStepV2ExecutionType,
   MigrationPlanStepV2Risk,
   React19MigrationPlanV2,
@@ -25,12 +23,20 @@ import type {
   React19ValidationStrategy,
 } from '../types/migrationPlan.types';
 import {
+  canMigrationPlanStepRunInExecution,
+  compareMigrationPlanStepsByCanonicalOrder,
+  getMigrationPlanStepCanonicalPhaseOrder,
   resolveMigrationPlanStepRollbackStrategy,
   resolveMigrationPlanStepRunRequirements,
 } from '../types/migrationPlan.types';
+import {
+  buildMigrationStepExecution,
+  ensureMigrationPlanStepBlockedReason,
+  isExecutableMigrationPlanStepCapability,
+  resolveMigrationPlanStepCapability,
+} from './migrationPlanStepContract';
 
 const VALIDATION_SCRIPT_PRIORITY = ['build', 'test', 'lint', 'typecheck'] as const;
-const SUPPORTED_SCRIPTED_EXECUTOR_KEYS = new Set<string>(['package-json-dependency-update']);
 const VALIDATION_SCRIPT_ALIASES = {
   typecheck: ['typecheck', 'type-check', 'tsc'],
 } as const;
@@ -183,7 +189,7 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
     new Set([...baseRecommendations, ...readinessReportRecommendations(readinessReport)]),
   );
 
-  const executableSteps = steps.filter((step) => isExecutableStep(step));
+  const executableSteps = steps.filter((step) => canMigrationPlanStepRunInExecution(step));
   const canExecute = mergedBlockedReasons.length === 0 && executableSteps.length > 0;
 
   return {
@@ -256,50 +262,27 @@ export function buildReact19PlanStepsFromRiskEngine(
   let order = 1;
 
   if (validationStrategy.baselineCommands.length > 0) {
-    const runRequirements = resolveMigrationPlanStepRunRequirements('validation-only');
-    const resolution = resolveExecutorMetadata({
-      stepId: 'react19.validation.baseline',
-      phase: 'validation',
-      executionType: 'validation-only',
-      issueCodes: [],
-      validationCommands: validationStrategy.baselineCommands,
-    });
-    const baselineExecution = mapExecutionMetadata(
-      'validation-only',
-      resolution.executorKey,
-      resolution.params,
+    steps.push(
+      buildScaffoldingStep({
+        id: 'react19.validation.baseline',
+        order: order++,
+        phase: 'validation',
+        track,
+        title: 'Run baseline validation in migration workspace',
+        description:
+          'Establish the current build/test/lint baseline inside the migration workspace before applying React 19 migration changes.',
+        reason:
+          'Baseline validation separates pre-existing project failures from migration-introduced regressions.',
+        risk: 'medium',
+        executionType: 'validation-only',
+        expectedCommands: validationStrategy.baselineCommands,
+        validationCommands: validationStrategy.baselineCommands,
+        expectedChangeScope: [
+          'Validation command output only (no file modifications)',
+        ],
+        requiresHumanReview: false,
+      }),
     );
-    steps.push({
-      id: 'react19.validation.baseline',
-      order: order++,
-      phase: 'validation',
-      track,
-      title: 'Run baseline validation in migration workspace',
-      description:
-        'Establish the current build/test/lint baseline inside the migration workspace before applying React 19 migration changes.',
-      reason:
-        'Baseline validation separates pre-existing project failures from migration-introduced regressions.',
-      risk: 'medium',
-      status: 'pending',
-      issueCodes: [],
-      executionType: 'validation-only',
-      ...(resolution.executorKey !== undefined ? { executorKey: resolution.executorKey } : {}),
-      capability: resolution.capability,
-      ...(resolution.blockedReason !== undefined
-        ? { blockedReason: resolution.blockedReason }
-        : {}),
-      requiresWorkspace: runRequirements.requiresWorkspace,
-      requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
-      requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
-      expectedCommands: validationStrategy.baselineCommands,
-      validationCommands: validationStrategy.baselineCommands,
-      rollbackStrategy: resolveMigrationPlanStepRollbackStrategy('validation-only'),
-      ...(baselineExecution !== undefined ? { execution: baselineExecution } : {}),
-      sourceIssueCodes: [],
-      expectedChangeScope: ['Validation command output only (no file modifications)'],
-      requiresHumanReview: false,
-      canRunInExecution: isExecutableStepCapability(resolution.capability),
-    });
   }
 
   const grouped = groupRiskRecommendationsIntoPlanSteps(scanReport, commandContext);
@@ -308,96 +291,54 @@ export function buildReact19PlanStepsFromRiskEngine(
   }
 
   if (validationStrategy.finalCommands.length > 0) {
-    const runRequirements = resolveMigrationPlanStepRunRequirements('validation-only');
-    const resolution = resolveExecutorMetadata({
-      stepId: 'react19.validation.final',
-      phase: 'validation',
-      executionType: 'validation-only',
-      issueCodes: [],
-      validationCommands: validationStrategy.finalCommands,
-    });
-    const finalValidationExecution = mapExecutionMetadata(
-      'validation-only',
-      resolution.executorKey,
-      resolution.params,
+    steps.push(
+      buildScaffoldingStep({
+        id: 'react19.validation.final',
+        order: order++,
+        phase: 'validation',
+        track,
+        title: 'Run final React 19 migration validation',
+        description:
+          'Run the full validation suite after all selected migration steps to confirm project stability on the React 19 path.',
+        reason:
+          'Final validation confirms the migrated state is stable and releasable.',
+        risk: 'medium',
+        executionType: 'validation-only',
+        expectedCommands: validationStrategy.finalCommands,
+        validationCommands: validationStrategy.finalCommands,
+        expectedChangeScope: [
+          'Validation command output only (no file modifications)',
+        ],
+        requiresHumanReview: false,
+      }),
     );
-    steps.push({
-      id: 'react19.validation.final',
-      order: order++,
-      phase: 'validation',
-      track,
-      title: 'Run final React 19 migration validation',
-      description:
-        'Run the full validation suite after all selected migration steps to confirm project stability on the React 19 path.',
-      reason: 'Final validation confirms the migrated state is stable and releasable.',
-      risk: 'medium',
-      status: 'pending',
-      issueCodes: [],
-      executionType: 'validation-only',
-      ...(resolution.executorKey !== undefined ? { executorKey: resolution.executorKey } : {}),
-      capability: resolution.capability,
-      ...(resolution.blockedReason !== undefined
-        ? { blockedReason: resolution.blockedReason }
-        : {}),
-      requiresWorkspace: runRequirements.requiresWorkspace,
-      requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
-      requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
-      expectedCommands: validationStrategy.finalCommands,
-      validationCommands: validationStrategy.finalCommands,
-      rollbackStrategy: resolveMigrationPlanStepRollbackStrategy('validation-only'),
-      ...(finalValidationExecution !== undefined ? { execution: finalValidationExecution } : {}),
-      sourceIssueCodes: [],
-      expectedChangeScope: ['Validation command output only (no file modifications)'],
-      requiresHumanReview: false,
-      canRunInExecution: isExecutableStepCapability(resolution.capability),
-    });
   }
 
-  const finalReviewResolution = resolveExecutorMetadata({
-    stepId: 'react19.final-review.signoff',
-    phase: 'final-review',
-    executionType: 'manual',
-    issueCodes: [],
-  });
-  const finalReviewExecution = mapExecutionMetadata(
-    'manual',
-    finalReviewResolution.executorKey,
-    finalReviewResolution.params,
+  steps.push(
+    buildScaffoldingStep({
+      id: 'react19.final-review.signoff',
+      order: order++,
+      phase: 'final-review',
+      track,
+      title: 'Finalize migration review and rollout sign-off',
+      description:
+        track === 'react-18-to-19'
+          ? 'Complete a final review focused on API compatibility changes, React 19 dependency upgrade outcomes, and validation evidence before rollout.'
+          : 'Complete a final review covering bridge outcomes, React 19 upgrade impacts, and validation evidence before rollout.',
+      reason:
+        'Final review captures migration readiness decisions and release confidence.',
+      risk: 'medium',
+      executionType: 'manual',
+      expectedCommands: validationStrategy.finalCommands,
+      validationCommands: validationStrategy.finalCommands,
+      expectedChangeScope: [
+        'Migration summary and release readiness checklist',
+      ],
+      requiresHumanReview: true,
+    }),
   );
-  const finalReviewRequirements = resolveMigrationPlanStepRunRequirements('manual');
-  steps.push({
-    id: 'react19.final-review.signoff',
-    order: order++,
-    phase: 'final-review',
-    track,
-    title: 'Finalize migration review and rollout sign-off',
-    description:
-      track === 'react-18-to-19'
-        ? 'Complete a final review focused on API compatibility changes, React 19 dependency upgrade outcomes, and validation evidence before rollout.'
-        : 'Complete a final review covering bridge outcomes, React 19 upgrade impacts, and validation evidence before rollout.',
-    reason: 'Final review captures migration readiness decisions and release confidence.',
-    risk: 'medium',
-    status: 'pending',
-    issueCodes: [],
-    executionType: 'manual',
-    capability: finalReviewResolution.capability,
-    ...(finalReviewResolution.blockedReason !== undefined
-      ? { blockedReason: finalReviewResolution.blockedReason }
-      : {}),
-    requiresWorkspace: finalReviewRequirements.requiresWorkspace,
-    requiresApprovalBeforeRun: finalReviewRequirements.requiresApprovalBeforeRun,
-    requiresValidationAfterRun: finalReviewRequirements.requiresValidationAfterRun,
-    expectedCommands: validationStrategy.finalCommands,
-    validationCommands: validationStrategy.finalCommands,
-    rollbackStrategy: resolveMigrationPlanStepRollbackStrategy('manual'),
-    ...(finalReviewExecution !== undefined ? { execution: finalReviewExecution } : {}),
-    sourceIssueCodes: [],
-    expectedChangeScope: ['Migration summary and release readiness checklist'],
-    requiresHumanReview: true,
-    canRunInExecution: false,
-  });
 
-  return steps.map(ensureCapabilityReason);
+  return steps.map(ensureMigrationPlanStepBlockedReason);
 }
 
 export function groupRiskRecommendationsIntoPlanSteps(
@@ -572,11 +513,7 @@ export function groupRiskRecommendationsIntoPlanSteps(
 
   return output
     .map((step) => ({ ...step, order: 0 }))
-    .sort((a, b) => {
-      const byPhase = getReactMigrationPhaseOrder(a.phase) - getReactMigrationPhaseOrder(b.phase);
-      if (byPhase !== 0) return byPhase;
-      return a.id.localeCompare(b.id);
-    });
+    .sort(compareMigrationPlanStepsByCanonicalOrder);
 }
 
 export function buildReact19ValidationStrategy(scanReport: ScanReport): React19ValidationStrategy {
@@ -670,6 +607,85 @@ function resolveSkippedPhases(
   ];
 }
 
+/**
+ * Configuration for the planner's "scaffolding" steps — steps the
+ * planner emits unconditionally (baseline validation, final
+ * validation, and the final review sign-off) rather than from
+ * risk-engine items. Centralised here so every scaffolding step is
+ * built through the same V2 contract path.
+ */
+interface ScaffoldingStepConfig {
+  readonly id: string;
+  readonly order: number;
+  readonly phase: ReactMigrationPhase;
+  readonly track: ReactMigrationTrack;
+  readonly title: string;
+  readonly description: string;
+  readonly reason: string;
+  readonly risk: MigrationPlanStepV2Risk;
+  readonly executionType: MigrationPlanStepV2ExecutionType;
+  readonly expectedCommands: readonly string[];
+  readonly validationCommands: readonly string[];
+  readonly expectedChangeScope: readonly string[];
+  readonly requiresHumanReview: boolean;
+}
+
+/**
+ * Build a planner-scaffolding step that fully satisfies the V2
+ * contract. This path never groups risk-engine items — for those use
+ * {@link createGroupedStep}.
+ */
+function buildScaffoldingStep(config: ScaffoldingStepConfig): MigrationPlanStepV2 {
+  const runRequirements = resolveMigrationPlanStepRunRequirements(config.executionType);
+  const resolution = resolveMigrationPlanStepCapability({
+    stepId: config.id,
+    phase: config.phase,
+    executionType: config.executionType,
+    issueCodes: [],
+    validationCommands: config.validationCommands,
+  });
+  const execution = buildMigrationStepExecution(
+    config.executionType,
+    resolution.executorKey,
+    resolution.params,
+  );
+  const canRunInExecution = isExecutableMigrationPlanStepCapability(resolution.capability);
+
+  return {
+    id: config.id,
+    order: config.order,
+    phase: config.phase,
+    canonicalPhaseOrder: getMigrationPlanStepCanonicalPhaseOrder(config.phase),
+    track: config.track,
+    title: config.title,
+    description: config.description,
+    reason: config.reason,
+    risk: config.risk,
+    status: 'pending',
+    issueCodes: [],
+    executionType: config.executionType,
+    ...(resolution.executorKey !== undefined
+      ? { executorKey: resolution.executorKey }
+      : {}),
+    capability: resolution.capability,
+    ...(resolution.blockedReason !== undefined
+      ? { blockedReason: resolution.blockedReason }
+      : {}),
+    requiresWorkspace: runRequirements.requiresWorkspace,
+    requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
+    requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
+    expectedChangedFiles: [],
+    expectedCommands: config.expectedCommands,
+    validationCommands: config.validationCommands,
+    rollbackStrategy: resolveMigrationPlanStepRollbackStrategy(config.executionType),
+    ...(execution !== undefined ? { execution } : {}),
+    sourceIssueCodes: [],
+    expectedChangeScope: config.expectedChangeScope,
+    requiresHumanReview: config.requiresHumanReview,
+    canRunInExecution,
+  };
+}
+
 function createGroupedStep(
   track: ReactMigrationTrack,
   phase: ReactMigrationPhase,
@@ -732,35 +748,43 @@ function createGroupedStep(
           item.riskLevel === 'high',
       ));
 
-  const executorResolution = resolveExecutorMetadata({
+  const params = resolveExecutorParams(id, executionType, sourceIssueCodes);
+  const executorResolution = resolveMigrationPlanStepCapability({
     stepId: id,
     phase,
     executionType,
     issueCodes: sourceIssueCodes,
     validationCommands: stepCommands.validationCommands,
+    ...(params !== undefined ? { params } : {}),
   });
-  const canRunInExecution = config.forceCanRunInExecution ?? isExecutableStepCapability(
-    executorResolution.capability,
-  );
-  const execution = mapExecutionMetadata(
-    executionType,
-    executorResolution.executorKey,
-    executorResolution.params,
-  );
   const capability =
-    status === 'blocked'
-      ? 'blocked'
-      : executorResolution.capability;
+    status === 'blocked' ? 'blocked' : executorResolution.capability;
   const blockedReason =
     status === 'blocked'
       ? 'Blocked by risk-engine eligibility or migration constraints.'
       : executorResolution.blockedReason;
+  const canRunInExecution =
+    config.forceCanRunInExecution ??
+    (status === 'pending' && isExecutableMigrationPlanStepCapability(capability));
+  const execution = buildMigrationStepExecution(
+    executionType,
+    executorResolution.executorKey,
+    executorResolution.params,
+  );
+  const expectedChangedFiles = resolveExpectedChangedFiles({
+    phase,
+    stepId: id,
+    executionType,
+    issueCodes: sourceIssueCodes,
+    ctx: commandContext.expectedFiles,
+  });
 
   return {
     id,
     title: config.title,
     description: config.description,
     phase,
+    canonicalPhaseOrder: getMigrationPlanStepCanonicalPhaseOrder(phase),
     track,
     reason: config.reason,
     risk: toPlanStepRisk(riskLevel),
@@ -775,55 +799,15 @@ function createGroupedStep(
     requiresWorkspace: runRequirements.requiresWorkspace,
     requiresApprovalBeforeRun: runRequirements.requiresApprovalBeforeRun,
     requiresValidationAfterRun: runRequirements.requiresValidationAfterRun,
-    ...(() => {
-      const expectedChangedFiles = resolveExpectedChangedFiles({
-        phase,
-        stepId: id,
-        executionType,
-        issueCodes: sourceIssueCodes,
-        ctx: commandContext.expectedFiles,
-      });
-      return expectedChangedFiles.length > 0 ? { expectedChangedFiles } : {};
-    })(),
-    ...(stepCommands.expectedCommands.length > 0
-      ? { expectedCommands: stepCommands.expectedCommands }
-      : {}),
-    ...(stepCommands.validationCommands.length > 0
-      ? { validationCommands: stepCommands.validationCommands }
-      : {}),
+    expectedChangedFiles,
+    expectedCommands: stepCommands.expectedCommands,
+    validationCommands: stepCommands.validationCommands,
     rollbackStrategy: resolveMigrationPlanStepRollbackStrategy(executionType),
     ...(execution !== undefined ? { execution } : {}),
     sourceIssueCodes,
     expectedChangeScope: expectedChangeScopeForPhase(phase),
     requiresHumanReview,
     canRunInExecution,
-  };
-}
-
-function mapExecutionMetadata(
-  executionType: MigrationPlanStepV2ExecutionType,
-  executorKey: string | undefined,
-  params: Record<string, unknown> | undefined,
-): MigrationPlanStepV2['execution'] | undefined {
-  if (executionType === 'manual') return { mode: 'manual' };
-  if (executionType === 'validation-only') {
-    return {
-      mode: 'validation',
-      ...(executorKey !== undefined ? { executorKey } : {}),
-      ...(params !== undefined ? { params } : {}),
-    };
-  }
-  if (executionType === 'ai-assisted') {
-    return {
-      mode: 'ai',
-      ...(executorKey !== undefined ? { executorKey } : {}),
-      ...(params !== undefined ? { params } : {}),
-    };
-  }
-  return {
-    mode: 'scripted',
-    ...(executorKey !== undefined ? { executorKey } : {}),
-    ...(params !== undefined ? { params } : {}),
   };
 }
 
@@ -1164,206 +1148,15 @@ function resolveExpectedChangedFiles(input: {
   return Array.from(files);
 }
 
-function isExecutableStep(step: MigrationPlanStepV2): boolean {
-  if (step.status !== 'pending') return false;
-  return isExecutableStepCapability(step.capability);
-}
-
-function isExecutableStepCapability(capability: MigrationPlanStepV2Capability): boolean {
-  return capability === 'available';
-}
-
-function resolveExecutorMetadata(input: {
-  readonly stepId: string;
-  readonly phase: ReactMigrationPhase;
-  readonly executionType: MigrationPlanStepV2ExecutionType;
-  readonly issueCodes: readonly string[];
-  readonly validationCommands?: readonly string[];
-}): {
-  readonly executorKey?: string;
-  readonly params?: Record<string, unknown>;
-  readonly capability: MigrationPlanStepV2Capability;
-  readonly blockedReason?: string;
-} {
-  const executorKey = resolveExecutorKey(input.stepId, input.phase, input.issueCodes);
-  const params = resolveExecutorParams(
-    input.stepId,
-    input.executionType,
-    input.issueCodes,
-  );
-
-  if (input.executionType === 'manual') {
-    return {
-      ...(executorKey !== undefined ? { executorKey } : {}),
-      capability: 'manual-only',
-      blockedReason:
-        'This step requires human judgement and cannot be safely automated by Migrate Pilot yet.',
-    };
-  }
-
-  if (input.executionType === 'validation-only') {
-    if ((input.validationCommands ?? []).length === 0) {
-      return {
-        ...(executorKey !== undefined ? { executorKey } : {}),
-        capability: 'blocked',
-        blockedReason:
-          'No validation commands were detected for this validation-only step.',
-      };
-    }
-    return {
-      ...(executorKey !== undefined ? { executorKey } : {}),
-      capability: 'not-yet-supported',
-      blockedReason:
-        'Validation command execution is not implemented yet. Run the listed commands manually.',
-    };
-  }
-
-  if (executorKey === undefined) {
-    return {
-      executorKey: fallbackExecutorKey(input.executionType),
-      capability: 'not-yet-supported',
-      blockedReason:
-        'No executor has been mapped for this step yet, so automatic execution is not available.',
-    };
-  }
-
-  if (input.executionType === 'scripted' && executorKey === 'package-json-dependency-update') {
-    if (params === undefined) {
-      return {
-        executorKey,
-        capability: 'not-yet-supported',
-        blockedReason:
-          'The package dependency executor requires deterministic params that are not available for this step yet.',
-      };
-    }
-    if (!SUPPORTED_SCRIPTED_EXECUTOR_KEYS.has(executorKey)) {
-      return {
-        executorKey,
-        capability: 'not-yet-supported',
-        blockedReason: `Executor "${executorKey}" is declared but not supported in this build.`,
-      };
-    }
-    return {
-      executorKey,
-      params,
-      capability: 'available',
-    };
-  }
-
-  if (input.executionType === 'scripted') {
-    return {
-      executorKey,
-      ...(params !== undefined ? { params } : {}),
-      capability: 'not-yet-supported',
-      blockedReason:
-        'A scripted executor is not implemented for this step yet. Keep this as a manual follow-up for now.',
-    };
-  }
-
-  if (input.executionType === 'codemod') {
-    return {
-      executorKey,
-      ...(params !== undefined ? { params } : {}),
-      capability: 'not-yet-supported',
-      blockedReason:
-        'Codemod execution is planned but the codemod runner is not wired yet.',
-    };
-  }
-
-  if (input.executionType === 'ai-assisted') {
-    return {
-      executorKey,
-      ...(params !== undefined ? { params } : {}),
-      capability: 'not-yet-supported',
-      blockedReason:
-        'AI-assisted execution is not wired into the execution engine yet.',
-    };
-  }
-
-  return {
-    executorKey,
-    ...(params !== undefined ? { params } : {}),
-    capability: 'not-yet-supported',
-    blockedReason: 'Automatic execution for this step is not available yet.',
-  };
-}
-
-function resolveExecutorKey(
-  stepId: string,
-  phase: ReactMigrationPhase,
-  issueCodes: readonly string[],
-): string | undefined {
-  if (stepId === 'react19.validation.baseline') return 'validation.command-runner';
-  if (stepId === 'react19.validation.final') return 'validation.command-runner';
-  if (stepId === 'react19.bridge.react18') return 'ai-source-transform';
-  if (stepId === 'react19.dependencies.react-upgrade') return 'package-json-dependency-update';
-  if (stepId === 'react19.preflight.prerequisites') return 'manual-review';
-  if (stepId === 'react19.final-review.signoff') return 'manual-review';
-
-  if (issueCodes.includes('build-tool-react-scripts-very-old')) {
-    return 'tooling.react-scripts';
-  }
-  if (
-    issueCodes.some(
-      (code) =>
-        code === 'jsx-transform-classic' || code === 'jsx-transform-config-not-detected',
-    )
-  ) {
-    return 'tooling.jsx-transform';
-  }
-  if (
-    issueCodes.some((code) =>
-      [
-        'react-dom-render-detected',
-        'react-dom-hydrate-detected',
-        'unmount-component-at-node-detected',
-        'unstable-render-subtree-detected',
-        'create-factory-detected',
-      ].includes(code),
-    )
-  ) {
-    return 'api.legacy-render';
-  }
-  if (issueCodes.includes('find-dom-node-detected')) return 'api.find-dom-node';
-  if (issueCodes.includes('string-refs-detected')) return 'api.string-refs';
-  if (issueCodes.includes('legacy-context-detected')) return 'api.legacy-context';
-  if (issueCodes.includes('deprecated-lifecycle-detected')) return 'api.unsafe-lifecycle';
-  if (issueCodes.includes('node-sass-detected')) return 'package-json-dependency-update';
-  if (
-    issueCodes.some((code) =>
-      ['typescript-not-configured', 'typescript-dependency-missing-but-files-present'].includes(
-        code,
-      ),
-    )
-  ) {
-    return 'source.typescript-readiness';
-  }
-
-  if (phase === 'validation') return 'validation.command-runner';
-  if (phase === 'tooling') return 'tsconfig-update';
-  if (phase === 'jsx-transform') return 'file-create-or-update';
-  if (phase === 'react-18-bridge') return 'ai-source-transform';
-  if (phase === 'react-19-upgrade') return 'package-json-dependency-update';
-  if (phase === 'source-modernization') return 'tsconfig-update';
-  if (phase === 'api-compatibility') return 'codemod-react-class-to-function';
-  return undefined;
-}
-
-function fallbackExecutorKey(executionType: MigrationPlanStepV2ExecutionType): string {
-  switch (executionType) {
-    case 'scripted':
-      return 'tsconfig-update';
-    case 'codemod':
-      return 'codemod-react-class-to-function';
-    case 'ai-assisted':
-      return 'ai-source-transform';
-    case 'validation-only':
-      return 'validation.command-runner';
-    case 'manual':
-      return 'manual-review';
-  }
-}
-
+/**
+ * Planner-specific executor params resolver.
+ *
+ * Only the foundation dependency step currently exposes deterministic
+ * scripted-executor params (the node-sass → sass swap). All other
+ * scripted/codemod/AI executors run with no extra params today; the
+ * contract layer in {@link migrationPlanStepContract} treats `undefined`
+ * params as "no extra params" and decides capability accordingly.
+ */
 function resolveExecutorParams(
   stepId: string,
   executionType: MigrationPlanStepV2ExecutionType,
@@ -1390,17 +1183,6 @@ function resolveExecutorParams(
         onlyIfMissing: true,
       },
     ],
-  };
-}
-
-function ensureCapabilityReason(step: MigrationPlanStepV2): MigrationPlanStepV2 {
-  if (step.capability === 'available') return step;
-  if (step.blockedReason !== undefined && step.blockedReason.trim().length > 0) {
-    return step;
-  }
-  return {
-    ...step,
-    blockedReason: 'Automatic execution is not available for this step yet.',
   };
 }
 

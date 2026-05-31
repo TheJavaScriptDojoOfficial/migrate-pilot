@@ -34,8 +34,11 @@ import type {
   MigrationPlanError,
   MigrationPlanState,
   MigrationPlanStatus,
+  MigrationPlanStepV2,
 } from '../types/migrationPlan.types';
 import {
+  canMigrationPlanStepRunInExecution,
+  getMigrationPlanStepCanonicalPhaseOrder,
   resolveMigrationPlanStepRollbackStrategy,
   resolveMigrationPlanStepRunRequirements,
 } from '../types/migrationPlan.types';
@@ -248,29 +251,79 @@ export function selectHasDraftPlan(s: MigrationPlanStoreState): boolean {
 
 export type { MigrationPlanState };
 
+/**
+ * Forward-compatibility shim for plan steps generated before R5.
+ *
+ * Older persisted plans may be missing the now-required V2 contract
+ * fields (`canonicalPhaseOrder`, `expectedChangedFiles`,
+ * `expectedCommands`, `validationCommands`, `sourceIssueCodes`,
+ * `expectedChangeScope`, `requiresHumanReview`, `canRunInExecution`,
+ * the run-requirement booleans, and `rollbackStrategy`). Newly
+ * generated plans set them explicitly; this normaliser fills in
+ * deterministic defaults for anything older without overwriting
+ * fields that are already populated.
+ */
 function normalizePlanForStoreCompatibility(plan: MigrationPlan): MigrationPlan {
-  const normalizedSteps = plan.steps.map((step) => {
-    const runRequirements = resolveMigrationPlanStepRunRequirements(step.executionType);
-    const compatibilityStep = step as typeof step & {
-      requiresWorkspace?: boolean;
-      requiresApprovalBeforeRun?: boolean;
-      requiresValidationAfterRun?: boolean;
-      rollbackStrategy?: (typeof step)['rollbackStrategy'];
-    };
-    return {
-      ...step,
-      requiresWorkspace: compatibilityStep.requiresWorkspace ?? runRequirements.requiresWorkspace,
-      requiresApprovalBeforeRun:
-        compatibilityStep.requiresApprovalBeforeRun ?? runRequirements.requiresApprovalBeforeRun,
-      requiresValidationAfterRun:
-        compatibilityStep.requiresValidationAfterRun ?? runRequirements.requiresValidationAfterRun,
-      rollbackStrategy:
-        compatibilityStep.rollbackStrategy ??
-        resolveMigrationPlanStepRollbackStrategy(step.executionType),
-    };
-  });
+  const normalizedSteps = plan.steps.map((step) =>
+    normalizePlanStepForStoreCompatibility(step),
+  );
   return {
     ...plan,
     steps: normalizedSteps,
+  };
+}
+
+function normalizePlanStepForStoreCompatibility(
+  step: MigrationPlanStepV2,
+): MigrationPlanStepV2 {
+  const runRequirements = resolveMigrationPlanStepRunRequirements(step.executionType);
+  // We treat the input as Partial because older persisted plans (R4
+  // and earlier) may be missing fields the V2 contract now requires.
+  // Casting once keeps the rest of the function strict.
+  const partial = step as Partial<MigrationPlanStepV2> & MigrationPlanStepV2;
+
+  const requiresWorkspace = partial.requiresWorkspace ?? runRequirements.requiresWorkspace;
+  const requiresApprovalBeforeRun =
+    partial.requiresApprovalBeforeRun ?? runRequirements.requiresApprovalBeforeRun;
+  const requiresValidationAfterRun =
+    partial.requiresValidationAfterRun ?? runRequirements.requiresValidationAfterRun;
+  const rollbackStrategy =
+    partial.rollbackStrategy ??
+    resolveMigrationPlanStepRollbackStrategy(step.executionType);
+
+  const canonicalPhaseOrder =
+    typeof partial.canonicalPhaseOrder === 'number'
+      ? partial.canonicalPhaseOrder
+      : getMigrationPlanStepCanonicalPhaseOrder(step.phase);
+
+  const expectedChangedFiles = partial.expectedChangedFiles ?? [];
+  const expectedCommands = partial.expectedCommands ?? [];
+  const validationCommands = partial.validationCommands ?? [];
+
+  const sourceIssueCodes = partial.sourceIssueCodes ?? step.issueCodes ?? [];
+  const expectedChangeScope = partial.expectedChangeScope ?? [];
+  const requiresHumanReview =
+    typeof partial.requiresHumanReview === 'boolean'
+      ? partial.requiresHumanReview
+      : requiresApprovalBeforeRun;
+  const canRunInExecution =
+    typeof partial.canRunInExecution === 'boolean'
+      ? partial.canRunInExecution
+      : canMigrationPlanStepRunInExecution(step);
+
+  return {
+    ...step,
+    canonicalPhaseOrder,
+    requiresWorkspace,
+    requiresApprovalBeforeRun,
+    requiresValidationAfterRun,
+    rollbackStrategy,
+    expectedChangedFiles,
+    expectedCommands,
+    validationCommands,
+    sourceIssueCodes,
+    expectedChangeScope,
+    requiresHumanReview,
+    canRunInExecution,
   };
 }

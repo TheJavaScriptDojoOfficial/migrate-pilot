@@ -1,7 +1,9 @@
 import type { ScanReport } from '@features/scanner';
-import type {
-  ReactMigrationPhase,
-  ReactMigrationTrack,
+import {
+  REACT_19_CANONICAL_PHASE_ORDER,
+  getReactMigrationPhaseOrder,
+  type ReactMigrationPhase,
+  type ReactMigrationTrack,
 } from '@features/react19-migration';
 
 export type MigrationPlanStatus =
@@ -117,16 +119,38 @@ export function resolveMigrationPlanStepRunRequirements(
 }
 
 /**
- * Planner/Executor contract V2.
+ * Planner/Executor contract V2 — Phase R5.
  *
- * This execution-aware shape is the canonical step contract for R5+.
- * R4 `React19PlanStep` remains temporarily for backward compatibility while
- * Planner V2 and the migration-plan UI are migrated incrementally.
+ * The canonical step contract is execution-aware, phase-aware,
+ * track-aware, validation-aware, approval-aware, and ready for the
+ * future execution engine. Every plan step the planner emits MUST
+ * fully populate this shape — the optional fields are limited to
+ * cases where there is no meaningful value (e.g. `executorKey` on a
+ * pure-manual step, `blockedReason` when the step is `available`).
+ *
+ * R5 hardening (vs. the transitional R4 shape):
+ *   - Adds `canonicalPhaseOrder` so consumers can sort by phase
+ *     without re-importing the canonical phase order table.
+ *   - Promotes the previously "transitional" fields
+ *     (`sourceIssueCodes`, `expectedChangeScope`,
+ *     `requiresHumanReview`, `canRunInExecution`) to required, since
+ *     the planner has always set them and the UI/execution layer is
+ *     downstream-of-them.
+ *   - Promotes `expectedChangedFiles`, `expectedCommands`, and
+ *     `validationCommands` to required (default `[]`) so consumers
+ *     never have to write `?? []`.
  */
 export interface MigrationPlanStepV2 {
   readonly id: string;
   readonly order: number;
   readonly phase: ReactMigrationPhase;
+  /**
+   * Index of `phase` in the canonical React 19 phase order
+   * (`REACT_19_CANONICAL_PHASE_ORDER`). Stored on the step so the UI,
+   * execution engine, and persistence layer can sort plan steps
+   * without re-importing the phase table.
+   */
+  readonly canonicalPhaseOrder: number;
   readonly track: ReactMigrationTrack;
 
   readonly title: string;
@@ -151,9 +175,12 @@ export interface MigrationPlanStepV2 {
   readonly requiresApprovalBeforeRun: boolean;
   readonly requiresValidationAfterRun: boolean;
 
-  readonly expectedChangedFiles?: readonly string[];
-  readonly expectedCommands?: readonly string[];
-  readonly validationCommands?: readonly string[];
+  /** Files the step is expected to touch; `[]` when none / unknown. */
+  readonly expectedChangedFiles: readonly string[];
+  /** Shell commands the executor will run (e.g. install); `[]` when none. */
+  readonly expectedCommands: readonly string[];
+  /** Validation commands to run after the step; `[]` when none. */
+  readonly validationCommands: readonly string[];
 
   readonly rollbackStrategy: MigrationPlanStepV2RollbackStrategy;
 
@@ -164,13 +191,27 @@ export interface MigrationPlanStepV2 {
   readonly execution?: MigrationStepExecution;
 
   /**
-   * Transitional fields retained so older UI/screens can keep rendering while
-   * migrating to V2-only fields.
+   * Source issue codes that motivated the step (risk-engine items,
+   * scanner issue codes, or planner fallback codes). Always set —
+   * `[]` for steps that exist as plan scaffolding (e.g. baseline
+   * validation, final review).
    */
-  readonly sourceIssueCodes?: readonly string[];
-  readonly expectedChangeScope?: readonly string[];
-  readonly requiresHumanReview?: boolean;
-  readonly canRunInExecution?: boolean;
+  readonly sourceIssueCodes: readonly string[];
+  /**
+   * Human-readable summary of the kinds of files/configuration this
+   * step is expected to change. Used by the UI; never `undefined`.
+   */
+  readonly expectedChangeScope: readonly string[];
+  /**
+   * True when this step requires explicit human review before it can
+   * be considered complete (regardless of whether an executor exists).
+   */
+  readonly requiresHumanReview: boolean;
+  /**
+   * True when the step is currently dispatchable by the execution
+   * engine (capability === 'available' AND status === 'pending').
+   */
+  readonly canRunInExecution: boolean;
 }
 
 export type React19PlanStepExecutionType = MigrationPlanStepV2ExecutionType;
@@ -290,6 +331,75 @@ export function requiresBlockedReasonForCapability(
 }
 
 export function isExecutableMigrationPlanStep(step: MigrationPlanStepV2): boolean {
+  if (step.status !== 'pending') return false;
+  return step.capability === 'available';
+}
+
+/**
+ * Canonical phase order index for a plan step.
+ *
+ * Re-exports the React 19 canonical phase order table on the
+ * planner-facing contract so callers in `migration-plan` and
+ * `execution` can sort steps without depending on the
+ * `react19-migration` feature directly.
+ */
+export function getMigrationPlanStepCanonicalPhaseOrder(
+  phase: ReactMigrationPhase,
+): number {
+  const order = getReactMigrationPhaseOrder(phase);
+  // Defensive: any unknown phase is treated as "after every known phase"
+  // so it never silently jumps to the front of the plan.
+  return order >= 0 ? order : REACT_19_CANONICAL_PHASE_ORDER.length;
+}
+
+/**
+ * Stable comparator for plan steps that prefers canonical phase order,
+ * then the step's own `order`, then `id` as a tiebreaker.
+ */
+export function compareMigrationPlanStepsByCanonicalOrder(
+  a: MigrationPlanStepV2,
+  b: MigrationPlanStepV2,
+): number {
+  const phaseDelta = a.canonicalPhaseOrder - b.canonicalPhaseOrder;
+  if (phaseDelta !== 0) return phaseDelta;
+  const orderDelta = a.order - b.order;
+  if (orderDelta !== 0) return orderDelta;
+  return a.id.localeCompare(b.id);
+}
+
+/**
+ * Map a planner execution type to the execution-engine's coarse mode.
+ *
+ * Planner V2 owns the richer `executionType` taxonomy (scripted,
+ * codemod, ai-assisted, manual, validation-only). The execution engine
+ * still consumes the older `MigrationStepExecutionMode` (scripted, ai,
+ * manual, validation). Centralising the mapping here keeps both
+ * contracts aligned without leaking either side's internals.
+ */
+export function mapMigrationPlanStepExecutionTypeToMode(
+  executionType: MigrationPlanStepV2ExecutionType,
+): MigrationStepExecutionMode {
+  switch (executionType) {
+    case 'scripted':
+    case 'codemod':
+      return 'scripted';
+    case 'ai-assisted':
+      return 'ai';
+    case 'manual':
+      return 'manual';
+    case 'validation-only':
+      return 'validation';
+  }
+}
+
+/**
+ * Predicate for "this step can be dispatched by the execution engine
+ * right now". Centralised so the planner, store-compat normaliser,
+ * and execution screen all agree on the meaning of "executable".
+ */
+export function canMigrationPlanStepRunInExecution(
+  step: Pick<MigrationPlanStepV2, 'status' | 'capability'>,
+): boolean {
   if (step.status !== 'pending') return false;
   return step.capability === 'available';
 }

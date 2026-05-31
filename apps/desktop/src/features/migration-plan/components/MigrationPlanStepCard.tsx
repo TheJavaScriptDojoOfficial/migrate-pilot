@@ -88,7 +88,7 @@ export function MigrationPlanStepCard({
           <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{step.reason}</p>
         </div>
 
-        {step.expectedChangedFiles !== undefined && step.expectedChangedFiles.length > 0 ? (
+        {step.expectedChangedFiles.length > 0 ? (
           <DetailRow label="Expected files">
             {step.expectedChangedFiles.map((f) => (
               <Badge key={f} tone="neutral" variant="soft" className="font-mono">
@@ -98,7 +98,7 @@ export function MigrationPlanStepCard({
           </DetailRow>
         ) : null}
 
-        {step.validationCommands !== undefined && step.validationCommands.length > 0 ? (
+        {step.validationCommands.length > 0 ? (
           <DetailRow label="Validation">
             {step.validationCommands.map((cmd) => (
               <Badge key={cmd} tone="info" variant="soft" className="font-mono">
@@ -108,7 +108,7 @@ export function MigrationPlanStepCard({
           </DetailRow>
         ) : null}
 
-        {step.expectedCommands !== undefined && step.expectedCommands.length > 0 ? (
+        {step.expectedCommands.length > 0 ? (
           <DetailRow label="Expected commands">
             {step.expectedCommands.map((cmd) => (
               <Badge key={`expected:${cmd}`} tone="neutral" variant="soft" className="font-mono">
