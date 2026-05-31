@@ -88,6 +88,17 @@ export {
   resolveReact19PlanGenerationGate,
 } from './services/react19ReadinessReportViewModel';
 export type { React19ReadinessReportInput } from './services/react19ReadinessReportViewModel';
+/* React 19 Report V2 hydration / resolver (R5 Step 11) */
+export {
+  hydrateReact19ScanReportV2,
+  isReact19ReportV2HydrationFailure,
+} from './services/react19ReportV2Resolver';
+export type {
+  React19ReportV2HydrationFailure,
+  React19ReportV2HydrationResult,
+  React19ReportV2HydrationSuccess,
+  React19ReportV2RebuildFlags,
+} from './services/react19ReportV2Resolver';
 /* React 19 risk/recommendation engine (R3) */
 export type {
   React19ExecutionCapability,

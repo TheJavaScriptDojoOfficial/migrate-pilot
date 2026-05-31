@@ -1,11 +1,13 @@
 import type { ScanReport } from '@features/scanner';
 import {
   REACT_19_CANONICAL_PHASE_ORDER,
+  buildReact19ReadinessReportViewModel,
   buildReact19RiskEngine,
   getReactMigrationPhaseOrder,
   mapRiskEnginePhaseToReactMigrationPhase,
   resolveReact19PlanGenerationGate,
   type React19MigrationRiskLevel,
+  type React19ReadinessReportViewModel,
   type React19RiskRecommendation,
   type React19RiskEngineResult,
   type ReactMigrationPhase,
@@ -67,6 +69,25 @@ interface StepCommandContext {
   readonly expectedFiles: ExpectedFilesContext;
 }
 
+/**
+ * Build the React 19 Migration Plan V2 from a scan report.
+ *
+ * R5 Step 11 contract: this function reads plan-shaping data **only**
+ * from the React 19 Report V2 surface on the scan report:
+ *
+ *   - `scanReport.react19MigrationContext`
+ *   - `scanReport.react19SupportStatus`
+ *   - `scanReport.react19RiskEngine`
+ *   - `scanReport.react19ReadinessReport`
+ *   - `scanReport.react19CompatibilityReport` (for signals already
+ *     normalized into the report V2 surface)
+ *
+ * Callers are expected to have already hydrated the scan report via
+ * `hydrateReact19ScanReportV2` so the derived Report V2 fields are
+ * present. For defensive resilience we still fall back to the canonical
+ * builders when something is missing — but the planner never produces a
+ * legacy generic modernization plan as an escape hatch.
+ */
 export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19MigrationPlanV2 {
   const gate = resolveReact19PlanGenerationGate(scanReport);
   const sourceMajor = scanReport.react19MigrationContext?.sourceReactMajor;
@@ -78,12 +99,19 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
   const track = resolveReact19PlanTrack(scanReport);
   const blockedReasons = [...gate.reasons];
   const riskEngine = resolveRiskEngine(scanReport);
+  const readinessReport = resolveReadinessReport(scanReport);
   if (!gate.canGeneratePlan || sourceMajor === undefined || track === null) {
     if (sourceMajor === undefined || track === null) {
       blockedReasons.push(
         'React migration track could not be resolved. React 16/17/18 migration context is required.',
       );
     }
+    if (readinessReport?.canGeneratePlan === false) {
+      for (const reason of readinessReport.cannotGeneratePlanReasons) {
+        blockedReasons.push(reason);
+      }
+    }
+    const dedupedBlockedReasons = Array.from(new Set(blockedReasons));
     return {
       id: makePlanId(scanReport),
       version: 'react19-plan-v2',
@@ -99,7 +127,7 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
       generatedAt: new Date().toISOString(),
       status: 'draft',
       canExecute: false,
-      blockedReasons: Array.from(new Set(blockedReasons)),
+      blockedReasons: dedupedBlockedReasons,
       prerequisites: ['Run a fresh React 19 compatibility scan after fixing eligibility blockers.'],
       steps: [],
       skippedPhases: [],
@@ -120,10 +148,10 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
         approvalGates: 0,
         requiredSteps: 0,
       },
-      blockers: Array.from(new Set(blockedReasons)),
-      warnings: [],
+      blockers: dedupedBlockedReasons,
+      warnings: readinessReportWarnings(readinessReport),
       assumptions: [],
-      recommendations: [],
+      recommendations: readinessReportRecommendations(readinessReport),
     };
   }
 
@@ -135,7 +163,25 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
   const riskBlockedReasons = riskEngine.items
     .filter((item) => item.blocksPlanGeneration === true)
     .map((item) => item.recommendation);
-  const mergedBlockedReasons = Array.from(new Set([...blockedReasons, ...riskBlockedReasons]));
+  const readinessBlockerReasons = readinessReport?.blockers.map((blocker) => blocker.message) ?? [];
+  const mergedBlockedReasons = Array.from(
+    new Set([...blockedReasons, ...riskBlockedReasons, ...readinessBlockerReasons]),
+  );
+
+  const validationWarnings = validationStrategy.missingCommands.map(
+    (cmd) => `Validation command "${cmd}" was not detected in project scripts.`,
+  );
+  const mergedWarnings = Array.from(
+    new Set([...validationWarnings, ...readinessReportWarnings(readinessReport)]),
+  );
+
+  const baseRecommendations = [
+    'Execute steps in phase order and validate after each high-risk change.',
+    'Treat React bridge and API compatibility steps as human-reviewed checkpoints.',
+  ];
+  const mergedRecommendations = Array.from(
+    new Set([...baseRecommendations, ...readinessReportRecommendations(readinessReport)]),
+  );
 
   const executableSteps = steps.filter((step) => isExecutableStep(step));
   const canExecute = mergedBlockedReasons.length === 0 && executableSteps.length > 0;
@@ -146,7 +192,7 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
     scanReportId: scanReport.id,
     projectPath: scanReport.projectPath,
     title: 'React 19 Migration Plan',
-    summaryText: `Generated from the React 19 compatibility scan and risk engine for ${track}.`,
+    summaryText: `Generated from the React 19 Report V2 (compatibility, risk engine, readiness) for ${track}.`,
     sourceReactVersion,
     targetReactVersion: '19',
     sourceMajor,
@@ -172,14 +218,9 @@ export function buildReact19MigrationPlanV2(scanReport: ScanReport): React19Migr
       requiredSteps: steps.filter((step) => step.status !== 'skipped').length,
     },
     blockers: mergedBlockedReasons,
-    warnings: validationStrategy.missingCommands.map(
-      (cmd) => `Validation command "${cmd}" was not detected in project scripts.`,
-    ),
+    warnings: mergedWarnings,
     assumptions: buildPrerequisites(scanReport, sourceMajor, validationStrategy),
-    recommendations: [
-      'Execute steps in phase order and validate after each high-risk change.',
-      'Treat React bridge and API compatibility steps as human-reviewed checkpoints.',
-    ],
+    recommendations: mergedRecommendations,
   };
 }
 
@@ -575,6 +616,45 @@ export function summarizeReact19PlanPhases(
 
 function resolveRiskEngine(scanReport: ScanReport): React19RiskEngineResult {
   return scanReport.react19RiskEngine ?? buildReact19RiskEngine(scanReport);
+}
+
+/**
+ * Resolve the React 19 Report V2 readiness view model from the scan
+ * report. Returns the persisted view model when present, otherwise
+ * rebuilds it deterministically from the rest of the Report V2 surface
+ * (R5 Step 11). Returns `undefined` when no Report V2 inputs are
+ * available (planner falls back gracefully — it never substitutes a
+ * legacy generic plan).
+ */
+function resolveReadinessReport(
+  scanReport: ScanReport,
+): React19ReadinessReportViewModel | undefined {
+  if (scanReport.react19ReadinessReport !== undefined) {
+    return scanReport.react19ReadinessReport;
+  }
+  const hasReportV2Inputs =
+    scanReport.react19CompatibilityReport !== undefined ||
+    scanReport.react19MigrationContext !== undefined ||
+    scanReport.react19SupportStatus !== undefined ||
+    scanReport.react19RiskEngine !== undefined;
+  if (!hasReportV2Inputs) return undefined;
+  return buildReact19ReadinessReportViewModel({ scanReport });
+}
+
+function readinessReportWarnings(
+  readinessReport: React19ReadinessReportViewModel | undefined,
+): readonly string[] {
+  if (readinessReport === undefined) return [];
+  return readinessReport.warnings.map((warning) => warning.message);
+}
+
+function readinessReportRecommendations(
+  readinessReport: React19ReadinessReportViewModel | undefined,
+): readonly string[] {
+  if (readinessReport === undefined) return [];
+  return readinessReport.recommendations.map(
+    (recommendation) => recommendation.detail,
+  );
 }
 
 function resolveSkippedPhases(

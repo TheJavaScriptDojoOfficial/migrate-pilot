@@ -25,7 +25,10 @@ import type { ScanReport } from '@features/scanner';
 import { useWorkflowProgressStore } from '@shared/hooks/useWorkflowProgress';
 
 import { generateMigrationPlan } from '../services/migrationPlanGenerator';
-import { resolveReact19PlanGenerationGate } from '@features/react19-migration';
+import {
+  hydrateReact19ScanReportV2,
+  resolveReact19PlanGenerationGate,
+} from '@features/react19-migration';
 import type {
   MigrationPlan,
   MigrationPlanError,
@@ -106,6 +109,29 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
       return;
     }
 
+    // R5 Step 11: Plan V2 may only be generated from a fully-hydrated
+    // React 19 Report V2 context. For older persisted reports we rebuild
+    // the derived pieces (risk engine, readiness report) on the fly; if
+    // an irreducible prerequisite (e.g. compatibility report, migration
+    // context) is missing, refuse to fall back to any legacy generic
+    // plan and surface the blocker to the user instead.
+    const hydration = hydrateReact19ScanReportV2(scanReport);
+    if (!hydration.ok) {
+      set({
+        status: 'blocked',
+        plan: undefined,
+        approved: false,
+        scanReportId: scanReport.id,
+        error: {
+          kind: 'plan-blocked',
+          message: hydration.reason,
+        },
+      });
+      useWorkflowProgressStore.getState().markStepIncomplete(WORKFLOW_STEP_ID);
+      return;
+    }
+    const hydratedScanReport = hydration.scanReport;
+
     set({
       status: 'generating',
       approved: false,
@@ -114,7 +140,9 @@ export const useMigrationPlanStore = create<Store>((set, get) => ({
 
     let plan: MigrationPlan;
     try {
-      plan = normalizePlanForStoreCompatibility(generateMigrationPlan(scanReport));
+      plan = normalizePlanForStoreCompatibility(
+        generateMigrationPlan(hydratedScanReport),
+      );
     } catch (err) {
       set({
         status: 'error',
