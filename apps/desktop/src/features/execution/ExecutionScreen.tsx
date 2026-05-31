@@ -31,7 +31,9 @@ import { ExecutionCapabilityCard } from './components/ExecutionCapabilityCard';
 import { ExecutionLogPanel } from './components/ExecutionLogPanel';
 import { ExecutionPlanStepList } from './components/ExecutionPlanStepList';
 import { ExecutionResultCard } from './components/ExecutionResultCard';
+import { ExecutionRunEnablementCard } from './components/ExecutionRunEnablementCard';
 import { ExecutionWorkspaceCard } from './components/ExecutionWorkspaceCard';
+import { summarizeStepResolutionWithFallback } from './executors/executorContextService';
 import {
   selectCapabilities,
   selectCapabilityFor,
@@ -47,7 +49,11 @@ import {
   ENGINE_STATUS_KIND,
   ENGINE_STATUS_LABEL,
 } from './services/executionPresentationService';
-import type { ExecutionStatus } from './types/execution.types';
+import {
+  canRunSelectedStep,
+  type RunStepEnablement,
+} from './services/runStepEnablementService';
+import type { ExecutionStatus, ExecutionStepStatus } from './types/execution.types';
 
 /**
  * Step 6 — Execute migration (generic execution framework).
@@ -180,12 +186,65 @@ export function ExecutionScreen(): JSX.Element {
     selectRunFor(s, selectedStepId),
   );
 
+  // Phase R6 — Step 5: derive the (completed, skipped, running) sets the
+  // enablement resolver needs from the per-step status map. This keeps the
+  // resolver pure (no store coupling) while letting the screen feed it
+  // live state.
+  const completedSteps = useMemo(
+    () => stepStatusIdSet(stepStatuses, 'completed'),
+    [stepStatuses],
+  );
+  const skippedSteps = useMemo(
+    () => stepStatusIdSet(stepStatuses, 'skipped'),
+    [stepStatuses],
+  );
+  const runningStepIdFromStatuses = useMemo(() => {
+    for (const [id, s] of Object.entries(stepStatuses)) {
+      if (s === 'running') return id;
+    }
+    return undefined;
+  }, [stepStatuses]);
+
+  // Phase R6 — Step 5: single enablement resolver. The Run button NEVER
+  // disables silently — `enablement.reasons` always carries the exact
+  // copy the UI surfaces.
+  const enablement: RunStepEnablement = useMemo(() => {
+    return canRunSelectedStep({
+      approvedPlan: plan,
+      isPlanApproved,
+      workspaceState,
+      selectedStep: selectedPlanStep,
+      ...(runningStepIdFromStatuses !== undefined
+        ? { runningStepId: runningStepIdFromStatuses }
+        : {}),
+      completedSteps,
+      skippedSteps,
+    });
+  }, [
+    plan,
+    isPlanApproved,
+    workspaceState,
+    selectedPlanStep,
+    runningStepIdFromStatuses,
+    completedSteps,
+    skippedSteps,
+  ]);
+
+  // Screen-facing summary used by the new V2 capability card to render
+  // phase / track / issue codes / executor key / capability status.
+  const enablementSummary = useMemo(() => {
+    if (selectedPlanStep === undefined) return undefined;
+    return summarizeStepResolutionWithFallback(
+      selectedPlanStep,
+      enablement.resolution,
+    );
+  }, [selectedPlanStep, enablement.resolution]);
+
+  // The Run button is enabled iff BOTH the V2 enablement resolver agrees
+  // and the engine is not already running. Tauri remains a hard gate
+  // because the actual scripted dispatch goes through the desktop shell.
   const canRun =
-    isTauri &&
-    blockedReason === undefined &&
-    selectedPlanStep !== undefined &&
-    selectedCapability?.executable === true &&
-    status !== 'running';
+    isTauri && enablement.enabled && status !== 'running';
 
   const canRetry =
     isTauri &&
@@ -197,15 +256,18 @@ export function ExecutionScreen(): JSX.Element {
     blockedReason === undefined && status !== 'blocked' && status !== 'running';
 
   const disabledRunReason = useMemo(() => {
-    if (!isTauri) return 'Execution requires the Migrate Pilot desktop shell.';
-    if (blockedReason !== undefined) return 'Resolve the blocked state first.';
-    if (selectedPlanStep === undefined) return 'Select a step to run.';
-    if (selectedCapability === undefined) {
-      return 'Verify executor availability before running.';
+    if (!isTauri) {
+      return 'Run step disabled because execution requires the Migrate Pilot desktop shell.';
     }
-    if (!selectedCapability.executable) return selectedCapability.reason;
+    if (status === 'running') {
+      return 'Run step disabled because another execution is already in flight.';
+    }
+    if (!enablement.enabled) {
+      // The resolver guarantees at least one reason when not enabled.
+      return enablement.reasons[0];
+    }
     return undefined;
-  }, [isTauri, blockedReason, selectedPlanStep, selectedCapability]);
+  }, [isTauri, status, enablement]);
 
   return (
     <div className="flex h-full flex-col">
@@ -310,24 +372,31 @@ export function ExecutionScreen(): JSX.Element {
 
                 <div className="flex flex-col gap-6">
                   {selectedPlanStep !== undefined ? (
-                    <ExecutionCapabilityCard
-                      step={selectedPlanStep}
-                      capability={selectedCapability}
-                      canVerify={
-                        isTauri &&
-                        status !== 'running' &&
-                        selectedPlanStep.execution !== undefined
-                      }
-                      verifying={false}
-                      onVerify={() => {
-                        if (selectedPlanStep.execution === undefined) return;
-                        void checkCapability({
-                          id: selectedPlanStep.id,
-                          title: selectedPlanStep.title,
-                          execution: selectedPlanStep.execution,
-                        });
-                      }}
-                    />
+                    <>
+                      <ExecutionRunEnablementCard
+                        step={selectedPlanStep}
+                        summary={enablementSummary}
+                        enablement={enablement}
+                      />
+                      <ExecutionCapabilityCard
+                        step={selectedPlanStep}
+                        capability={selectedCapability}
+                        canVerify={
+                          isTauri &&
+                          status !== 'running' &&
+                          selectedPlanStep.execution !== undefined
+                        }
+                        verifying={false}
+                        onVerify={() => {
+                          if (selectedPlanStep.execution === undefined) return;
+                          void checkCapability({
+                            id: selectedPlanStep.id,
+                            title: selectedPlanStep.title,
+                            execution: selectedPlanStep.execution,
+                          });
+                        }}
+                      />
+                    </>
                   ) : (
                     <NoSelectionCard />
                   )}
@@ -470,4 +539,20 @@ function WebPreviewNotice(): JSX.Element {
       </div>
     </Card>
   );
+}
+
+/**
+ * Build a {@link ReadonlySet} of plan-step ids that currently sit in
+ * the given {@link ExecutionStepStatus}. Used to feed the enablement
+ * resolver without pulling the entire store into it.
+ */
+function stepStatusIdSet(
+  stepStatuses: Readonly<Record<string, ExecutionStepStatus>>,
+  target: ExecutionStepStatus,
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const [id, status] of Object.entries(stepStatuses)) {
+    if (status === target) ids.add(id);
+  }
+  return ids;
 }

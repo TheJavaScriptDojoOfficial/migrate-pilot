@@ -290,6 +290,14 @@ export interface ExecutionStepRunRaw {
   readonly changedFiles: readonly ExecutionChangedFileRaw[];
   readonly logs: readonly ExecutionLogEntryRaw[];
   readonly error?: ExecutionErrorRaw | null;
+  /**
+   * True when the captured run requires the user to manually verify
+   * the outcome before treating the step as done. Set by executors
+   * that intentionally do not auto-verify (manual-instruction
+   * checklists, AI-assisted bounded edits). Optional/null when the
+   * source executor did not emit the flag.
+   */
+  readonly requiresManualVerification?: boolean | null;
 }
 
 /**

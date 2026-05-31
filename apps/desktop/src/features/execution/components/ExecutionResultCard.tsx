@@ -28,9 +28,27 @@ export function ExecutionResultCard({
   run,
 }: ExecutionResultCardProps): JSX.Element {
   const isSuccess = run.status === 'completed';
+  /* A successful run that the executor flagged as
+   * `requiresManualVerification` is the "manual verification required"
+   * state from the V2 acceptance criteria — distinct from a
+   * deterministic completed run. We never render this state for
+   * failures: a failure stays a failure regardless of the flag. */
+  const requiresManualVerification =
+    isSuccess && run.requiresManualVerification === true;
   const executorEntry = getExecutorEntry(run.executorKey);
   const executorLabel =
     executorEntry?.label ?? run.executorKey ?? `${run.mode} executor`;
+
+  const badgeTone: 'success' | 'warning' | 'danger' = isSuccess
+    ? requiresManualVerification
+      ? 'warning'
+      : 'success'
+    : 'danger';
+  const badgeLabel: string = isSuccess
+    ? requiresManualVerification
+      ? 'Manual verification required'
+      : 'Completed'
+    : 'Failed';
 
   return (
     <Card accent={isSuccess}>
@@ -41,41 +59,61 @@ export function ExecutionResultCard({
             Captured by {executorLabel} on {formatTimestamp(run.startedAt)}.
           </CardDescription>
         </div>
-        <Badge
-          tone={isSuccess ? 'success' : 'danger'}
-          variant="soft"
-          withDot
-          uppercase
-        >
-          {isSuccess ? 'Completed' : 'Failed'}
+        <Badge tone={badgeTone} variant="soft" withDot uppercase>
+          {badgeLabel}
         </Badge>
       </CardHeader>
 
       <div
         className={`flex items-start gap-3 rounded-md border px-4 py-3 ${
           isSuccess
-            ? 'border-success/40 bg-success-soft'
+            ? requiresManualVerification
+              ? 'border-warning/40 bg-warning-soft'
+              : 'border-success/40 bg-success-soft'
             : 'border-danger/40 bg-danger-soft'
         }`}
       >
         <span
           className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
-            isSuccess ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'
+            isSuccess
+              ? requiresManualVerification
+                ? 'bg-warning/20 text-warning'
+                : 'bg-success/20 text-success'
+              : 'bg-danger/20 text-danger'
           }`}
         >
-          <Icon name={isSuccess ? 'check' : 'cross'} className="h-3 w-3" />
+          <Icon
+            name={
+              isSuccess
+                ? requiresManualVerification
+                  ? 'lock'
+                  : 'check'
+                : 'cross'
+            }
+            className="h-3 w-3"
+          />
         </span>
         <div className="min-w-0 flex-1">
           <p
             className={`text-xs font-semibold ${
-              isSuccess ? 'text-success' : 'text-danger'
+              isSuccess
+                ? requiresManualVerification
+                  ? 'text-warning'
+                  : 'text-success'
+                : 'text-danger'
             }`}
           >
-            {isSuccess ? 'Step completed safely' : 'Step failed'}
+            {isSuccess
+              ? requiresManualVerification
+                ? 'Manual verification required'
+                : 'Step completed safely'
+              : 'Step failed'}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-ink-muted">
             {isSuccess
-              ? 'Only the workspace was modified. The original project remains untouched.'
+              ? requiresManualVerification
+                ? 'Migrate Pilot did not modify any files. Follow the captured instructions in your workspace, then confirm the project still builds before marking the step complete.'
+                : 'Only the workspace was modified. The original project remains untouched.'
               : (run.error?.message ?? 'See logs for details.')}
           </p>
         </div>

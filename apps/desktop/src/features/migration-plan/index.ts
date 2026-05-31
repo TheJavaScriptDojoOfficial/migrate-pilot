@@ -38,6 +38,14 @@ export {
   resolvePlanApprovalGate,
   isWorkspaceCreationPlanStep,
 } from './services/migrationPlanApprovalService';
+export {
+  deriveExecutorAvailability,
+  isFileChangingPlanStepExecutionType,
+  isManualOnlyPlanStepExecutionType,
+  isValidationOnlyPlanStepExecutionType,
+  mapMigrationPlanStepExecutionTypeToMode,
+  resolveMigrationPlanStepExecutorAvailability,
+} from './types/migrationPlan.types';
 export type {
   PlanApprovalGate,
   PlanApprovalGateInput,
@@ -46,6 +54,9 @@ export type {
   PlanApprovalGenerationGateInput,
 } from './services/migrationPlanApprovalService';
 export type {
+  ExecutorAvailability,
+  ExecutorAvailabilityStatus,
+  ExecutorExecutionType,
   MigrationPlan,
   MigrationPlanError,
   MigrationPlanErrorKind,

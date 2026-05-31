@@ -41,6 +41,78 @@ export type MigrationPlanStepV2RollbackStrategy =
   | 'discard-worktree-changes'
   | 'manual';
 
+/* -------------------------------------------------------------------------- */
+/* Executor Registry V2 — plan-step facing metadata                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Coarse status emitted by an executor's `canRun(context)` probe and
+ * persisted on a plan step as `executorAvailability.status`.
+ *
+ *   `available`       Executor is registered, supported, and can run
+ *                     against the current workspace right now.
+ *   `unavailable`     Executor is registered but cannot run right now
+ *                     (missing workspace prerequisite, wrong package
+ *                     manager, missing params, etc.). The `reason`
+ *                     explains what is missing.
+ *   `manual-only`     Step is intentionally manual — Migrate Pilot will
+ *                     never dispatch anything for it; the user reviews
+ *                     and accepts.
+ *   `future-support`  Executor key is declared but the underlying
+ *                     implementation is not shipped in this build yet.
+ *                     The UI surfaces an honest "not available yet"
+ *                     badge.
+ *   `blocked`         Step is blocked by a hard precondition (e.g.
+ *                     validation-only step with no commands attached,
+ *                     mismatched React majors, …) and the planner
+ *                     refuses to dispatch it until the blocker is
+ *                     resolved.
+ *
+ * This union is intentionally richer than the legacy
+ * {@link MigrationPlanStepV2Capability} enum so the V2 executor
+ * framework can distinguish "not implemented yet" from "implemented but
+ * not currently runnable" — two cases the UI needs different copy for.
+ */
+export type ExecutorAvailabilityStatus =
+  | 'available'
+  | 'unavailable'
+  | 'manual-only'
+  | 'future-support'
+  | 'blocked';
+
+/**
+ * Structured availability descriptor produced by an executor's
+ * `canRun(context)` probe and persisted on a plan step.
+ *
+ * Why a struct (and not just a status enum):
+ *   - The UI needs the `reason` verbatim so users are never left
+ *     wondering why a Run button is greyed out.
+ *   - `warnings` lets executors surface non-blocking concerns that the
+ *     UI can show alongside an `available` step (e.g. "lockfile will be
+ *     regenerated").
+ *
+ * Invariants:
+ *   - `reason` is required when `status !== 'available'`. Callers that
+ *     persist availability MUST populate it; the helper
+ *     `deriveExecutorAvailability` enforces this by default.
+ *   - `warnings`, when present, MUST be non-empty.
+ */
+export interface ExecutorAvailability {
+  readonly status: ExecutorAvailabilityStatus;
+  readonly reason?: string;
+  readonly warnings?: readonly string[];
+}
+
+/**
+ * Canonical executor-execution-type union for the Executor Registry V2.
+ *
+ * The planner already classifies steps by the same five-way taxonomy
+ * via {@link MigrationPlanStepV2ExecutionType}; this alias gives the
+ * V2 executor contract a stable, executor-facing name without
+ * duplicating the literal union.
+ */
+export type ExecutorExecutionType = MigrationPlanStepV2ExecutionType;
+
 export interface MigrationPlanStepRunRequirements {
   readonly requiresWorkspace: boolean;
   readonly requiresApprovalBeforeRun: boolean;
@@ -212,6 +284,32 @@ export interface MigrationPlanStepV2 {
    * engine (capability === 'available' AND status === 'pending').
    */
   readonly canRunInExecution: boolean;
+
+  /* ------------------------------------------------------------------ */
+  /* Executor Registry V2 metadata (Phase R6 Step 1)                    */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Structured availability descriptor produced by an executor's
+   * `canRun(context)` probe. The richer V2 shape complements (and is
+   * intended to eventually supersede) the legacy `capability` enum:
+   * UI consumers can read `executorAvailability` when present, falling
+   * back to `deriveExecutorAvailability(step)` for older persisted
+   * plans where this field is not populated yet.
+   *
+   * Optional so existing persisted plans (and steps emitted by older
+   * planner builds) continue to satisfy the type.
+   */
+  readonly executorAvailability?: ExecutorAvailability;
+
+  /**
+   * True when this step requires explicit user verification AFTER the
+   * executor runs (e.g. a codemod that needs eyes-on review even when
+   * it completes cleanly). Distinct from `requiresHumanReview`, which
+   * gates pre-run approval. Optional so steps that have no post-run
+   * gate can omit it.
+   */
+  readonly requiresManualVerification?: boolean;
 }
 
 export type React19PlanStepExecutionType = MigrationPlanStepV2ExecutionType;
@@ -437,4 +535,103 @@ export function canMigrationPlanStepRunInExecution(
 ): boolean {
   if (step.status !== 'pending') return false;
   return step.capability === 'available';
+}
+
+/* -------------------------------------------------------------------------- */
+/* Executor Availability adapters (Phase R6 Step 1)                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Maps the legacy {@link MigrationPlanStepV2Capability} enum onto the
+ * richer {@link ExecutorAvailabilityStatus} taxonomy.
+ *
+ * The mapping is intentionally conservative — `not-yet-supported` is
+ * collapsed to `future-support` so the UI surfaces an honest
+ * "not available in this build yet" message rather than implying the
+ * executor exists but is currently blocked.
+ */
+function mapCapabilityToAvailabilityStatus(
+  capability: MigrationPlanStepV2Capability,
+): ExecutorAvailabilityStatus {
+  switch (capability) {
+    case 'available':
+      return 'available';
+    case 'manual-only':
+      return 'manual-only';
+    case 'blocked':
+      return 'blocked';
+    case 'not-yet-supported':
+      return 'future-support';
+  }
+}
+
+/**
+ * Derive an {@link ExecutorAvailability} from a step's legacy capability
+ * fields. Used as a back-compat shim so consumers of the V2 contract
+ * can always read a structured availability, even when a persisted
+ * plan was emitted before `executorAvailability` was populated.
+ *
+ * The derivation is purely a re-shape of existing data — no inference,
+ * no executor-registry lookup — so it is safe to call from anywhere.
+ */
+export function deriveExecutorAvailability(
+  step: Pick<
+    MigrationPlanStepV2,
+    'capability' | 'blockedReason' | 'executionType' | 'executorKey'
+  >,
+): ExecutorAvailability {
+  const status = mapCapabilityToAvailabilityStatus(step.capability);
+  if (status === 'available') {
+    return { status };
+  }
+  const reason =
+    step.blockedReason !== undefined && step.blockedReason.trim().length > 0
+      ? step.blockedReason
+      : defaultAvailabilityReason(status, step.executionType, step.executorKey);
+  return { status, reason };
+}
+
+/**
+ * Resolve the executor availability for a plan step, preferring the
+ * persisted V2 field when present and falling back to a derivation
+ * from the legacy `capability` + `blockedReason` otherwise.
+ *
+ * This is the function call execution-time code should make — never
+ * read `step.executorAvailability` directly when you also want
+ * back-compat with older plans.
+ */
+export function resolveMigrationPlanStepExecutorAvailability(
+  step: Pick<
+    MigrationPlanStepV2,
+    | 'capability'
+    | 'blockedReason'
+    | 'executionType'
+    | 'executorKey'
+    | 'executorAvailability'
+  >,
+): ExecutorAvailability {
+  if (step.executorAvailability !== undefined) {
+    return step.executorAvailability;
+  }
+  return deriveExecutorAvailability(step);
+}
+
+function defaultAvailabilityReason(
+  status: Exclude<ExecutorAvailabilityStatus, 'available'>,
+  executionType: MigrationPlanStepV2ExecutionType,
+  executorKey: string | undefined,
+): string {
+  switch (status) {
+    case 'manual-only':
+      return 'This step requires human judgement and cannot be safely automated by Migrate Pilot yet.';
+    case 'blocked':
+      return 'A hard precondition is blocking this step. Resolve the blocker before running it.';
+    case 'future-support':
+      if (executorKey === undefined) {
+        return `No executor is mapped for this ${executionType} step yet, so automatic execution is not available.`;
+      }
+      return `Executor "${executorKey}" is declared but not supported in this build yet.`;
+    case 'unavailable':
+      return 'The executor is registered but cannot run against the current workspace right now.';
+  }
 }

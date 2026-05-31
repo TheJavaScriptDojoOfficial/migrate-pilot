@@ -137,6 +137,17 @@ export interface ExecutionCapability {
  * The runtime state machine narrows `status` down to `'running' |
  * 'completed' | 'failed'` because `pending`/`unsupported`/`skipped` apply
  * to the per-step status, not to a captured run.
+ *
+ * `requiresManualVerification` is the fourth distinguishing state Phase
+ * R6 Step 4 introduces. A `completed` run with `requiresManualVerification
+ * === true` finished cleanly but is intentionally observational —
+ * Migrate Pilot did not (or cannot) verify the result on the user's
+ * behalf. The UI uses this flag to render a distinct
+ * "Manual verification required" banner instead of the plain
+ * "Completed" banner, and downstream gates can refuse to mark the step
+ * truly done until the user accepts. The flag is independent of
+ * `status`: a `failed` run is still surfaced as a failure even if the
+ * executor declared the work was manual-only.
  */
 export interface ExecutionStepRun {
   readonly id: string;
@@ -154,6 +165,19 @@ export interface ExecutionStepRun {
   readonly changedFiles: readonly ExecutionChangedFile[];
   readonly logs: readonly ExecutionLogEntry[];
   readonly error?: ExecutionError;
+  /**
+   * True when the user MUST manually verify the run before treating
+   * the step as truly complete. Set by executors that intentionally
+   * leave verification to the human author (manual-instruction
+   * checklist runs, AI-assisted bounded edits the user still needs to
+   * diff-review, etc.).
+   *
+   * Optional so older runs persisted before Phase R6 Step 4 — and
+   * deterministic runs that self-verify (validation commands,
+   * package-dependency edits) — continue to satisfy the type without
+   * extra ceremony.
+   */
+  readonly requiresManualVerification?: boolean;
 }
 
 /* Re-export the planner's execution metadata type so external execution

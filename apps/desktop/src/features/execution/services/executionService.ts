@@ -252,6 +252,9 @@ export function parseStepRun(raw: ExecutionStepRunRaw): ExecutionStepRun {
     ...(raw.error !== undefined && raw.error !== null
       ? { error: parseError(raw.error) }
       : {}),
+    ...(raw.requiresManualVerification === true
+      ? { requiresManualVerification: true }
+      : {}),
   };
 }
 
